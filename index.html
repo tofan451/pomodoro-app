@@ -1,0 +1,437 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Focus — Pomodoro Timer</title>
+  <meta name="description" content="A professional Pomodoro timer with task management, time tracking and reports." />
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🍅</text></svg>" />
+  <!-- PWA / iPhone home-screen support -->
+  <link rel="manifest" href="manifest.webmanifest" />
+  <meta name="theme-color" content="#0e1116" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="apple-mobile-web-app-title" content="Focus" />
+  <link rel="apple-touch-icon" href="icons/icon-180.png" />
+  <link rel="stylesheet" href="styles.css" />
+  <script defer src="app.js"></script>
+</head>
+<body data-mode="focus">
+
+  <!-- ===================== Header ===================== -->
+  <header class="app-header">
+    <div class="brand">
+      <span class="brand-dot" aria-hidden="true"></span>
+      <h1>Focus</h1>
+    </div>
+
+    <nav class="view-nav" aria-label="Main views">
+      <button class="view-btn is-active" data-view="timer">Timer</button>
+      <button class="view-btn" data-view="reports">Reports</button>
+    </nav>
+
+    <button id="settings-btn" class="icon-btn" aria-label="Settings" title="Settings">
+      <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor"
+           stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <circle cx="12" cy="12" r="3"></circle>
+        <path d="M19.4 15a1.7 1.7 0 0 0 .34 1.87l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.7 1.7 0 0 0-1.87-.34 1.7 1.7 0 0 0-1 1.55V21a2 2 0 1 1-4 0v-.09a1.7 1.7 0 0 0-1-1.55 1.7 1.7 0 0 0-1.87.34l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.7 1.7 0 0 0 .34-1.87 1.7 1.7 0 0 0-1.55-1H3a2 2 0 1 1 0-4h.09a1.7 1.7 0 0 0 1.55-1 1.7 1.7 0 0 0-.34-1.87l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.7 1.7 0 0 0 1.87.34h.09a1.7 1.7 0 0 0 1-1.55V3a2 2 0 1 1 4 0v.09a1.7 1.7 0 0 0 1 1.55 1.7 1.7 0 0 0 1.87-.34l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.7 1.7 0 0 0-.34 1.87v.09a1.7 1.7 0 0 0 1.55 1H21a2 2 0 1 1 0 4h-.09a1.7 1.7 0 0 0-1.55 1z"></path>
+      </svg>
+    </button>
+  </header>
+
+  <main class="app-main">
+
+    <!-- ===================== Timer view ===================== -->
+    <section id="view-timer" class="view is-active">
+      <div class="timer-layout">
+
+        <!-- Timer card -->
+        <div class="card timer-card" id="timer-card" data-bg="default">
+          <div class="mode-tabs" role="tablist" aria-label="Session type">
+            <button class="mode-tab" data-mode="focus" role="tab">Focus</button>
+            <button class="mode-tab" data-mode="short" role="tab">Short Break</button>
+            <button class="mode-tab" data-mode="long" role="tab">Long Break</button>
+          </div>
+
+          <!-- Circular timer -->
+          <div class="ring-wrap">
+            <svg class="ring" viewBox="0 0 300 300" role="img" aria-label="Countdown progress">
+              <defs>
+                <linearGradient id="ring-gradient" x1="0%" y1="0%" x2="100%" y2="100%">
+                  <stop offset="0%"  class="grad-a"></stop>
+                  <stop offset="100%" class="grad-b"></stop>
+                </linearGradient>
+              </defs>
+              <circle class="ring-track" cx="150" cy="150" r="132"></circle>
+              <circle class="ring-progress" id="ring-progress" cx="150" cy="150" r="132"></circle>
+            </svg>
+            <div class="ring-center">
+              <div id="clock" class="clock">25:00</div>
+              <div id="mode-label" class="mode-label">Focus</div>
+              <div id="active-task-label" class="active-task-label">No task selected</div>
+            </div>
+
+            <!-- Soundscape picker at the bottom-left of the ring -->
+            <div class="ring-tools ring-tools-left">
+              <button id="sound-btn" class="tool-btn" type="button" title="Soundscape &amp; scene" aria-label="Choose a soundscape with its matching scene">🎧</button>
+            </div>
+
+            <!-- Full-window toggle at the bottom-right -->
+            <div class="ring-tools">
+              <button id="zen-btn" class="tool-btn" type="button" title="Full-window timer" aria-label="Toggle full-window timer">⛶</button>
+            </div>
+          </div>
+
+          <!-- Cycle progress toward long break -->
+          <div id="cycle-dots" class="cycle-dots" aria-label="Sessions until long break"></div>
+
+          <!-- Controls -->
+          <div class="controls">
+            <button id="reset-btn" class="icon-btn ctrl-secondary" aria-label="Reset timer" title="Reset">
+              <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor"
+                   stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <path d="M3 12a9 9 0 1 0 3-6.7"></path><polyline points="3 4 3 9 8 9"></polyline>
+              </svg>
+            </button>
+            <button id="start-btn" class="start-btn">Start</button>
+            <button id="skip-btn" class="icon-btn ctrl-secondary" aria-label="Skip to next session" title="Skip">
+              <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor"
+                   stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <polygon points="5 4 15 12 5 20 5 4"></polygon><line x1="19" y1="5" x2="19" y2="19"></line>
+              </svg>
+            </button>
+          </div>
+          <p class="hint">Press <kbd>Space</kbd> to start / pause</p>
+        </div>
+
+        <!-- Tasks card -->
+        <div class="card tasks-card">
+          <div class="card-header">
+            <h2>Tasks</h2>
+            <div class="header-actions">
+              <button id="new-folder-btn" class="mini-btn" type="button">+ Folder</button>
+              <span id="task-count" class="badge">0</span>
+            </div>
+          </div>
+
+          <form id="task-form" class="task-form" autocomplete="off">
+            <input id="task-input" type="text" placeholder="Add a task…" maxlength="120" aria-label="New task name" />
+            <select id="task-folder" class="folder-select" aria-label="Folder for the new task"></select>
+            <button type="submit" class="add-btn" aria-label="Add task">+</button>
+          </form>
+
+          <ul id="task-list" class="task-list" aria-label="Task list"></ul>
+          <p id="task-empty" class="empty-note">No tasks yet. Add one above, then select it to track your focus time.</p>
+        </div>
+
+      </div>
+    </section>
+
+    <!-- ===================== Reports view ===================== -->
+    <section id="view-reports" class="view">
+      <div class="reports-layout">
+
+        <div class="stat-grid">
+          <div class="card stat-card">
+            <span class="stat-label">Today</span>
+            <span id="stat-today" class="stat-value">0m</span>
+            <span class="stat-sub">focus time</span>
+          </div>
+          <div class="card stat-card">
+            <span class="stat-label">This Week</span>
+            <span id="stat-week" class="stat-value">0m</span>
+            <span class="stat-sub">focus time</span>
+          </div>
+          <div class="card stat-card">
+            <span class="stat-label">Sessions</span>
+            <span id="stat-sessions" class="stat-value">0</span>
+            <span class="stat-sub">completed</span>
+          </div>
+          <div class="card stat-card">
+            <span class="stat-label">All Time</span>
+            <span id="stat-total" class="stat-value">0m</span>
+            <span class="stat-sub">focus time</span>
+          </div>
+        </div>
+
+        <div class="card records-card">
+          <div class="card-header"><h2>Personal Records</h2></div>
+          <div class="records-grid">
+            <div class="record">
+              <span class="record-emoji" aria-hidden="true">🏆</span>
+              <div>
+                <span class="record-label">Win Day</span>
+                <span id="record-day" class="record-value">—</span>
+                <span id="record-day-sub" class="record-sub">no focus time yet</span>
+              </div>
+            </div>
+            <div class="record">
+              <span class="record-emoji" aria-hidden="true">🥇</span>
+              <div>
+                <span class="record-label">Win Week</span>
+                <span id="record-week" class="record-value">—</span>
+                <span id="record-week-sub" class="record-sub">no focus time yet</span>
+              </div>
+            </div>
+            <div class="record">
+              <span class="record-emoji" aria-hidden="true">🎖️</span>
+              <div>
+                <span class="record-label">Win Month</span>
+                <span id="record-month" class="record-value">—</span>
+                <span id="record-month-sub" class="record-sub">no focus time yet</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="card chart-card">
+          <div class="card-header"><h2>Last 7 Days</h2></div>
+          <div id="week-chart" class="week-chart" role="img" aria-label="Focus time per day, last seven days"></div>
+        </div>
+
+        <div class="card table-card">
+          <div class="card-header"><h2>Custom Report</h2></div>
+          <div class="report-controls">
+            <select id="report-period" aria-label="Report period">
+              <option value="week">This Week</option>
+              <option value="month">This Month</option>
+              <option value="year">This Year</option>
+              <option value="all">All Time</option>
+              <option value="custom">Custom Range…</option>
+            </select>
+            <div id="custom-range" class="custom-range" hidden>
+              <input type="date" id="report-start" aria-label="Start date" />
+              <span>to</span>
+              <input type="date" id="report-end" aria-label="End date" />
+            </div>
+          </div>
+          <div id="report-summary" class="report-summary"></div>
+          <div class="table-scroll">
+            <table class="report-table">
+              <thead>
+                <tr><th>Task</th><th>Sessions</th><th>Total Time</th><th>Last Worked</th><th></th></tr>
+              </thead>
+              <tbody id="report-tbody"></tbody>
+            </table>
+          </div>
+          <p id="report-empty" class="empty-note">No focus sessions in this period.</p>
+        </div>
+
+      </div>
+    </section>
+  </main>
+
+  <!-- ===================== Settings dialog ===================== -->
+  <dialog id="settings-dialog" class="settings-dialog">
+    <form method="dialog" id="settings-form">
+      <h2>Settings</h2>
+
+      <div class="field-grid">
+        <label class="field">
+          <span>Focus (minutes)</span>
+          <input type="number" id="set-focus" min="1" max="180" required />
+        </label>
+        <label class="field">
+          <span>Short break (minutes)</span>
+          <input type="number" id="set-short" min="1" max="60" required />
+        </label>
+        <label class="field">
+          <span>Long break (minutes)</span>
+          <input type="number" id="set-long" min="1" max="60" required />
+        </label>
+        <label class="field">
+          <span>Long break every</span>
+          <input type="number" id="set-every" min="2" max="12" required />
+        </label>
+      </div>
+
+      <label class="toggle-row">
+        <input type="checkbox" id="set-sound" />
+        <span>Sound notification when a session ends</span>
+      </label>
+      <div class="field field-wide">
+        <span>Appearance</span>
+        <div class="segmented" id="set-theme" role="radiogroup" aria-label="Appearance">
+          <button type="button" data-value="light">Light</button>
+          <button type="button" data-value="dark">Dark</button>
+          <button type="button" data-value="system">Automatic</button>
+        </div>
+      </div>
+
+      <div class="field field-wide">
+        <span>Layout</span>
+        <div class="segmented" id="set-layout" role="radiogroup" aria-label="Layout">
+          <button type="button" data-value="auto">Automatic</button>
+          <button type="button" data-value="mobile">Mobile</button>
+          <button type="button" data-value="desktop">Desktop</button>
+        </div>
+      </div>
+
+      <label class="toggle-row">
+        <input type="checkbox" id="set-autostart-on" />
+        <span>Auto-start the next session</span>
+      </label>
+      <label class="toggle-row is-sub" id="autostop-row">
+        <input type="checkbox" id="set-autostop" />
+        <span>…but stop after each long break</span>
+      </label>
+
+      <label class="toggle-row">
+        <input type="checkbox" id="set-match" />
+        <span>Match the noise to the background scene</span>
+      </label>
+
+      <label class="toggle-row" id="flip-row" hidden>
+        <input type="checkbox" id="set-flip" />
+        <span>Flip mode — pause when the phone is picked up, resume when it is placed face-down</span>
+      </label>
+
+      <div class="settings-links">
+        <button type="button" id="backup-btn" class="mini-btn">Backup &amp; Sync…</button>
+      </div>
+
+      <p class="dialog-note">Saving stops and resets the current timer.</p>
+
+      <div class="dialog-actions">
+        <button type="button" id="settings-cancel" class="btn-ghost">Cancel</button>
+        <button type="submit" value="save" class="btn-primary">Save</button>
+      </div>
+    </form>
+  </dialog>
+
+  <!-- ===================== New folder dialog ===================== -->
+  <dialog id="folder-dialog" class="settings-dialog">
+    <form method="dialog" id="folder-form">
+      <h2>New Folder</h2>
+
+      <label class="field field-wide">
+        <span>Name</span>
+        <input type="text" id="folder-name" maxlength="40" placeholder="e.g. Thesis, Work, Personal…" required />
+      </label>
+
+      <p class="picker-label">Color</p>
+      <div id="color-picker" class="swatch-row" role="radiogroup" aria-label="Folder color"></div>
+
+      <p class="picker-label">Icon</p>
+      <div id="icon-picker" class="icon-grid" role="radiogroup" aria-label="Folder icon"></div>
+
+      <div class="dialog-actions">
+        <button type="button" id="folder-cancel" class="btn-ghost">Cancel</button>
+        <button type="submit" value="create" class="btn-primary">Create</button>
+      </div>
+    </form>
+  </dialog>
+
+  <!-- ===================== Move-to-folder dialog ===================== -->
+  <dialog id="move-dialog" class="settings-dialog">
+    <h2>Move to folder</h2>
+    <div id="move-options" class="move-options"></div>
+    <div class="dialog-actions">
+      <button type="button" id="move-cancel" class="btn-ghost">Cancel</button>
+    </div>
+  </dialog>
+
+  <!-- ===================== Soundscape picker ===================== -->
+  <dialog id="sound-dialog" class="settings-dialog">
+    <h2>Soundscapes</h2>
+    <p class="confirm-message">Pick a background noise — its matching scene is applied to the timer at the same time.</p>
+    <div id="sound-options" class="bg-grid"></div>
+    <label class="field field-wide">
+      <span>Volume</span>
+      <input type="range" id="sound-volume" min="0" max="100" step="5" />
+    </label>
+    <div class="dialog-actions">
+      <button type="button" id="sound-close" class="btn-ghost">Close</button>
+    </div>
+  </dialog>
+
+  <!-- ===================== Timer background picker ===================== -->
+  <dialog id="bg-dialog" class="settings-dialog">
+    <h2>Timer Background</h2>
+    <p class="confirm-message">Applies only to the timer — tasks and reports keep the default look.</p>
+    <div id="bg-options" class="bg-grid"></div>
+    <div class="dialog-actions">
+      <button type="button" id="bg-close" class="btn-ghost">Close</button>
+    </div>
+  </dialog>
+
+  <!-- ===================== Backup & Sync ===================== -->
+  <dialog id="backup-dialog" class="settings-dialog">
+    <h2>Backup &amp; Sync</h2>
+    <h3 class="dialog-subhead">Google Drive sync</h3>
+    <p class="confirm-message">
+      Connects with your own Google OAuth client and stores the data in the
+      app's private Drive space. While the OAuth consent screen is in testing
+      mode, add your Google account as a test user in Google Cloud Console.
+    </p>
+    <label class="field field-wide">
+      <span>OAuth client ID</span>
+      <input type="text" id="drive-client-id" spellcheck="false" autocomplete="off" />
+    </label>
+    <label class="field field-wide">
+      <span>OAuth client secret</span>
+      <input type="password" id="drive-secret" spellcheck="false" autocomplete="off"
+             placeholder="from Google Cloud Console → Credentials" />
+    </label>
+    <div class="backup-actions">
+      <button type="button" id="drive-connect" class="btn-primary">Connect</button>
+      <button type="button" id="drive-sync-now" class="btn-ghost">Sync now</button>
+      <button type="button" id="drive-disconnect" class="btn-ghost">Disconnect</button>
+    </div>
+    <p id="drive-status" class="dialog-note">Not connected.</p>
+
+    <h3 class="dialog-subhead">Manual backup</h3>
+    <p class="confirm-message">
+      Works everywhere, no Google account needed: save the file in your Google
+      Drive folder and import it on the other device.
+    </p>
+    <div class="backup-actions">
+      <button type="button" id="export-download" class="btn-primary">Download backup</button>
+      <button type="button" id="export-copy" class="btn-ghost">Copy to clipboard</button>
+    </div>
+    <label class="field field-wide">
+      <span>Import — paste a backup (the file's contents) below</span>
+      <textarea id="import-text" rows="4" spellcheck="false" placeholder='{"settings": …}'></textarea>
+    </label>
+    <div class="dialog-actions">
+      <button type="button" id="backup-close" class="btn-ghost">Close</button>
+      <button type="button" id="import-btn" class="btn-primary">Import</button>
+    </div>
+  </dialog>
+
+  <!-- ===================== Edit report row ===================== -->
+  <dialog id="edit-report-dialog" class="settings-dialog">
+    <h2>Edit recorded time</h2>
+    <p id="edit-report-info" class="confirm-message"></p>
+    <div class="field-grid">
+      <label class="field">
+        <span>Completed sessions</span>
+        <input type="number" id="edit-sessions" min="0" max="999" />
+      </label>
+      <label class="field">
+        <span>Total time (minutes)</span>
+        <input type="number" id="edit-minutes" min="0" max="6000" />
+      </label>
+    </div>
+    <p class="dialog-note">Changes apply to the currently selected report period and are confirmed before anything is saved.</p>
+    <div class="dialog-actions">
+      <button type="button" id="edit-report-cancel" class="btn-ghost">Cancel</button>
+      <button type="button" id="edit-report-save" class="btn-primary">Apply…</button>
+    </div>
+  </dialog>
+
+  <!-- ===================== Delete-folder confirmation ===================== -->
+  <dialog id="confirm-dialog" class="settings-dialog">
+    <h2 id="confirm-title">Delete folder?</h2>
+    <p id="confirm-message" class="confirm-message"></p>
+    <div class="dialog-actions">
+      <button type="button" id="confirm-cancel" class="btn-ghost">Cancel</button>
+      <button type="button" id="confirm-delete" class="btn-danger">Delete</button>
+    </div>
+  </dialog>
+
+  <!-- Toast notifications -->
+  <div id="toast" class="toast" role="status" aria-live="polite"></div>
+
+</body>
+</html>

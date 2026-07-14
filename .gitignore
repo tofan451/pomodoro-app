@@ -1,0 +1,5 @@
+# Built Mac app bundle — rebuild it locally with mac/build.sh, don't commit it
+Focus.app/
+
+# macOS clutter
+.DS_Store
