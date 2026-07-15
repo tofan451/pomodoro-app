@@ -100,7 +100,7 @@
 
   const state = {
     settings: { ...DEFAULT_SETTINGS },
-    folders: [], // { id, name, color, icon, collapsed, createdAt }
+    folders: [], // { id, name, color, icon, parentId, collapsed, createdAt }
     tasks: [], // { id, name, done, folderId, createdAt }
     sessions: [], // { id, taskId, seconds, endedAt, completed } — focus time only
     activeTaskId: null,
@@ -758,6 +758,9 @@
     dialog: $("#settings-dialog"),
     folderDialog: $("#folder-dialog"),
     folderName: $("#folder-name"),
+    folderParent: $("#folder-parent"),
+    folderTitle: $("#folder-dialog-title"),
+    folderSubmit: $("#folder-submit"),
     colorPicker: $("#color-picker"),
     iconPicker: $("#icon-picker"),
   };
@@ -841,6 +844,56 @@
     return task ? state.folders.find((f) => f.id === task.folderId) : undefined;
   }
 
+  /* ---------- Folder tree helpers (folders can nest via parentId) ---------- */
+
+  /** Direct child folders of `parentId` (use null for the top level). */
+  function childFolders(parentId) {
+    return state.folders.filter((f) => (f.parentId || null) === (parentId || null));
+  }
+
+  /** Every folder id below `folderId` (children, grandchildren, …). */
+  function descendantFolderIds(folderId) {
+    const out = [];
+    const stack = [folderId];
+    while (stack.length) {
+      const id = stack.pop();
+      for (const f of state.folders) {
+        if ((f.parentId || null) === id) {
+          out.push(f.id);
+          stack.push(f.id);
+        }
+      }
+    }
+    return out;
+  }
+
+  /** All tasks in a folder and any folder nested inside it. */
+  function tasksInSubtree(folderId) {
+    const ids = new Set([folderId, ...descendantFolderIds(folderId)]);
+    return state.tasks.filter((t) => ids.has(t.folderId));
+  }
+
+  /** Folders in display order (depth-first), each with its nesting depth.
+      `excludeId`, when given, drops that folder and its descendants — used
+      to keep a folder from being reparented under itself. */
+  function foldersInOrder(excludeId) {
+    const excluded = new Set();
+    if (excludeId) {
+      excluded.add(excludeId);
+      for (const id of descendantFolderIds(excludeId)) excluded.add(id);
+    }
+    const list = [];
+    const walk = (parentId, depth) => {
+      for (const folder of childFolders(parentId)) {
+        if (excluded.has(folder.id)) continue;
+        list.push({ folder, depth });
+        walk(folder.id, depth + 1);
+      }
+    };
+    walk(null, 0);
+    return list;
+  }
+
   function renderActiveTaskLabel() {
     const task = state.tasks.find((t) => t.id === state.activeTaskId);
     const folder = folderOf(task);
@@ -877,7 +930,7 @@
     return totals;
   }
 
-  function makeTaskItem(task, totals, inFolder) {
+  function makeTaskItem(task, totals, inFolder, depth = 0) {
     const li = document.createElement("li");
     li.className =
       "task-item" +
@@ -885,6 +938,9 @@
       (task.id === state.activeTaskId ? " is-active" : "") +
       (task.done ? " is-done" : "");
     li.dataset.id = task.id;
+    // A task lines up with its folder header at the same width (same indent),
+    // so task rectangles are never wider than the folders they sit under.
+    if (depth > 0) li.style.marginLeft = depth * 16 + "px";
 
     const check = document.createElement("button");
     check.className = "task-check";
@@ -916,10 +972,14 @@
     return li;
   }
 
-  function makeFolderHeader(folder, tasks, totals) {
+  function makeFolderHeader(folder, tasks, totals, depth = 0) {
     const li = document.createElement("li");
     li.className = "folder-header" + (folder.collapsed ? " is-collapsed" : "");
     li.dataset.folderId = folder.id;
+    // Nested folders sit further right than their parent. Uses margin (not
+    // padding) so the header box shrinks in step with the task rows below it,
+    // keeping folders and their tasks the same width.
+    if (depth > 0) li.style.marginLeft = depth * 16 + "px";
 
     const caret = document.createElement("span");
     caret.className = "folder-caret";
@@ -942,13 +1002,19 @@
     meta.className = "folder-meta";
     meta.textContent = `${tasks.length} · ${fmtDuration(seconds)}`;
 
+    const edit = document.createElement("button");
+    edit.className = "task-move folder-edit";
+    edit.innerHTML = iconSvg("pen", 14); // SVG (not a glyph) so it renders in WKWebView
+    edit.title = "Edit folder (name, color, icon, parent)";
+    edit.setAttribute("aria-label", `Edit folder ${folder.name}`);
+
     const del = document.createElement("button");
     del.className = "task-delete folder-delete";
     del.textContent = "×";
     del.title = "Delete folder (tasks are kept)";
     del.setAttribute("aria-label", `Delete folder ${folder.name}`);
 
-    li.append(caret, icon, name, meta, del);
+    li.append(caret, icon, name, meta, edit, del);
     return li;
   }
 
@@ -960,10 +1026,11 @@
     inbox.value = "";
     inbox.textContent = "Inbox";
     el.taskFolderSelect.appendChild(inbox);
-    for (const folder of state.folders) {
+    for (const { folder, depth } of foldersInOrder()) {
       const option = document.createElement("option");
       option.value = folder.id;
-      option.textContent = folder.name;
+      // Non-breaking spaces indent nested folders in the dropdown.
+      option.textContent = "  ".repeat(depth) + folder.name;
       el.taskFolderSelect.appendChild(option);
     }
     // Keep the previous choice selected across re-renders when possible.
@@ -983,14 +1050,22 @@
     const folderIds = new Set(state.folders.map((f) => f.id));
     const loose = state.tasks.filter((t) => !folderIds.has(t.folderId));
 
-    for (const folder of state.folders) {
-      const tasks = state.tasks.filter((t) => t.folderId === folder.id);
-      el.taskList.appendChild(makeFolderHeader(folder, tasks, totals));
-      if (!folder.collapsed) {
-        for (const task of tasks) {
-          el.taskList.appendChild(makeTaskItem(task, totals, true));
-        }
+    // Depth-first walk: a folder shows its subfolders first, then its own
+    // tasks. A collapsed folder hides its whole subtree.
+    const renderFolder = (folder, depth) => {
+      const subtree = tasksInSubtree(folder.id); // count/time include nested
+      el.taskList.appendChild(makeFolderHeader(folder, subtree, totals, depth));
+      if (folder.collapsed) return;
+      for (const child of childFolders(folder.id)) {
+        renderFolder(child, depth + 1);
       }
+      const tasks = state.tasks.filter((t) => t.folderId === folder.id);
+      for (const task of tasks) {
+        el.taskList.appendChild(makeTaskItem(task, totals, true, depth));
+      }
+    };
+    for (const folder of childFolders(null)) {
+      renderFolder(folder, 0);
     }
 
     if (loose.length && state.folders.length) {
@@ -1030,7 +1105,9 @@
     if (header) {
       const folder = state.folders.find((f) => f.id === header.dataset.folderId);
       if (!folder) return;
-      if (event.target.closest(".folder-delete")) {
+      if (event.target.closest(".folder-edit")) {
+        openFolderDialog(folder); // edit name / color / icon / parent
+      } else if (event.target.closest(".folder-delete")) {
         confirmFolderDelete(folder); // deletion happens only after confirmation
       } else {
         folder.collapsed = !folder.collapsed;
@@ -1063,10 +1140,12 @@
     renderTasks();
   }
 
-  /* ---------- Folder dialog ---------- */
+  /* ---------- Folder dialog (create / edit) ---------- */
 
   let pickedColor = FOLDER_COLORS[0];
   let pickedIcon = FOLDER_ICONS[0];
+  // null while creating a new folder; a folder id while editing one.
+  let editingFolderId = null;
 
   function renderPickers() {
     el.colorPicker.innerHTML = "";
@@ -1098,10 +1177,32 @@
     }
   }
 
-  function openFolderDialog() {
-    el.folderName.value = "";
-    pickedColor = FOLDER_COLORS[0];
-    pickedIcon = FOLDER_ICONS[0];
+  /** Fill the parent-folder dropdown. When editing, `folder` is excluded
+      (along with its descendants) so it can't be nested inside itself. */
+  function renderFolderParentOptions(folder) {
+    el.folderParent.innerHTML = "";
+    const top = document.createElement("option");
+    top.value = "";
+    top.textContent = "None (top level)";
+    el.folderParent.appendChild(top);
+    for (const { folder: f, depth } of foldersInOrder(folder ? folder.id : null)) {
+      const option = document.createElement("option");
+      option.value = f.id;
+      option.textContent = "  ".repeat(depth) + f.name;
+      el.folderParent.appendChild(option);
+    }
+  }
+
+  /** Open the dialog to create a new folder, or edit `folder` when given. */
+  function openFolderDialog(folder) {
+    editingFolderId = folder ? folder.id : null;
+    el.folderName.value = folder ? folder.name : "";
+    pickedColor = folder ? folder.color : FOLDER_COLORS[0];
+    pickedIcon = folder ? folder.icon : FOLDER_ICONS[0];
+    renderFolderParentOptions(folder);
+    el.folderParent.value = folder ? folder.parentId || "" : "";
+    el.folderTitle.textContent = folder ? "Edit Folder" : "New Folder";
+    el.folderSubmit.textContent = folder ? "Save" : "Create";
     renderPickers();
     el.folderDialog.showModal();
   }
@@ -1119,16 +1220,28 @@
   }
 
   function confirmFolderDelete(folder) {
+    const newParent = folder.parentId || null;
+    const parentName = newParent
+      ? (state.folders.find((f) => f.id === newParent) || {}).name
+      : null;
+    const dest = parentName ? `“${parentName}”` : "the Inbox";
     const count = state.tasks.filter((t) => t.folderId === folder.id).length;
+    const subCount = childFolders(folder.id).length;
+    const parts = [];
+    if (count) parts.push(`${count} task${count === 1 ? "" : "s"}`);
+    if (subCount) parts.push(`${subCount} subfolder${subCount === 1 ? "" : "s"}`);
     openConfirm(
       `Delete “${folder.name}”?`,
-      count === 0
+      parts.length === 0
         ? "This folder is empty."
-        : `Its ${count} task${count === 1 ? "" : "s"} will move to the Inbox — tracked time and history are kept.`,
+        : `Its ${parts.join(" and ")} will move to ${dest} — tracked time and history are kept.`,
       "Delete",
       () => {
         for (const t of state.tasks) {
-          if (t.folderId === folder.id) t.folderId = null; // move to Inbox
+          if (t.folderId === folder.id) t.folderId = newParent; // move up
+        }
+        for (const f of state.folders) {
+          if ((f.parentId || null) === folder.id) f.parentId = newParent;
         }
         state.folders = state.folders.filter((f) => f.id !== folder.id);
         save();
@@ -1166,8 +1279,8 @@
     options.innerHTML = "";
 
     const choices = [
-      { id: null, icon: "inbox", name: "Inbox", color: "" },
-      ...state.folders,
+      { id: null, icon: "inbox", name: "Inbox", color: "", depth: 0 },
+      ...foldersInOrder().map(({ folder, depth }) => ({ ...folder, depth })),
     ];
     for (const choice of choices) {
       const btn = document.createElement("button");
@@ -1175,6 +1288,7 @@
       btn.className =
         "move-option" +
         ((task.folderId || null) === choice.id ? " is-current" : "");
+      if (choice.depth) btn.style.marginLeft = choice.depth * 16 + "px";
       const iconWrap = document.createElement("span");
       iconWrap.className = "move-option-icon";
       iconWrap.innerHTML = iconSvg(choice.icon, 15);
@@ -1194,17 +1308,30 @@
     $("#move-dialog").showModal();
   }
 
-  function createFolder() {
+  function submitFolder() {
     const name = el.folderName.value.trim();
     if (!name) return;
-    state.folders.push({
-      id: uid(),
-      name,
-      color: pickedColor,
-      icon: pickedIcon,
-      collapsed: false,
-      createdAt: Date.now(),
-    });
+    const parentId = el.folderParent.value || null;
+    if (editingFolderId) {
+      const folder = state.folders.find((f) => f.id === editingFolderId);
+      if (folder) {
+        folder.name = name;
+        folder.color = pickedColor;
+        folder.icon = pickedIcon;
+        folder.parentId = parentId;
+      }
+    } else {
+      state.folders.push({
+        id: uid(),
+        name,
+        color: pickedColor,
+        icon: pickedIcon,
+        parentId,
+        collapsed: false,
+        createdAt: Date.now(),
+      });
+    }
+    editingFolderId = null;
     save();
     renderTasks();
   }
@@ -2316,9 +2443,12 @@
     });
     el.taskList.addEventListener("click", handleTaskListClick);
 
-    $("#new-folder-btn").addEventListener("click", openFolderDialog);
-    $("#folder-cancel").addEventListener("click", () => el.folderDialog.close());
-    $("#folder-form").addEventListener("submit", createFolder);
+    $("#new-folder-btn").addEventListener("click", () => openFolderDialog());
+    $("#folder-cancel").addEventListener("click", () => {
+      editingFolderId = null;
+      el.folderDialog.close();
+    });
+    $("#folder-form").addEventListener("submit", submitFolder);
     $("#move-cancel").addEventListener("click", () => $("#move-dialog").close());
 
     $("#confirm-cancel").addEventListener("click", () => {

@@ -100,8 +100,8 @@ kbd {
 .app-header {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 16px;
+  justify-content: flex-start;
+  gap: 20px;
   max-width: 1060px;
   margin: 0 auto;
   padding: 22px 24px 10px;
@@ -137,20 +137,30 @@ kbd {
   padding: 4px;
 }
 
-.view-btn {
-  padding: 7px 20px;
+/* Timer / Reports / Settings as uniform icon buttons inside the nav pill. */
+.nav-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 38px;
+  height: 38px;
   border-radius: 999px;
-  font-size: 0.88rem;
-  font-weight: 600;
   color: var(--muted);
-  transition: color 0.2s, background 0.2s;
+  transition: color 0.2s, background 0.2s, transform 0.1s;
 }
 
-.view-btn:hover {
+.nav-btn:hover {
   color: var(--text);
+  background: var(--surface-2);
 }
 
-.view-btn.is-active {
+.nav-btn:active {
+  transform: scale(0.94);
+}
+
+/* The active view (Timer or Reports) stays highlighted, even on hover. */
+.nav-btn.view-btn.is-active,
+.nav-btn.view-btn.is-active:hover {
   background: var(--accent);
   color: #fff;
 }
@@ -994,17 +1004,18 @@ kbd {
   color: var(--muted);
 }
 
-.folder-header .folder-delete {
+.folder-header .folder-delete,
+.folder-header .folder-edit {
   opacity: 0;
 }
 
-.folder-header:hover .folder-delete {
+.folder-header:hover .folder-delete,
+.folder-header:hover .folder-edit {
   opacity: 1;
 }
 
-.task-item.in-folder {
-  margin-left: 16px;
-}
+/* Indentation for nested tasks is applied per-depth in JS (margin-left),
+   matching the folder header above them so their widths line up. */
 
 .inbox-label {
   padding: 10px 10px 4px;
