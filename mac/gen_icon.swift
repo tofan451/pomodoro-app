@@ -1,4 +1,5 @@
-// Renders the app icon (🍅 on a dark rounded tile) into an .iconset folder.
+// Renders the app icon into an .iconset folder: a round orange "watch"
+// (gradient ring + clock hands) on a near-black tile, matching the app's UI.
 // Usage: swift gen_icon.swift /path/to/AppIcon.iconset
 
 import AppKit
@@ -9,18 +10,60 @@ func render(_ pixels: Int) -> Data? {
     let s = CGFloat(pixels)
     let image = NSImage(size: NSSize(width: s, height: s))
     image.lockFocus()
+    guard let ctx = NSGraphicsContext.current?.cgContext else { image.unlockFocus(); return nil }
 
+    // 1. Near-black rounded tile (matches the app's dark UI background).
     let rect = NSRect(x: 0, y: 0, width: s, height: s)
-    NSColor(red: 0.086, green: 0.106, blue: 0.137, alpha: 1).setFill()
+    NSColor(red: 0.043, green: 0.055, blue: 0.078, alpha: 1).setFill() // ~#0b0e14
     NSBezierPath(roundedRect: rect, xRadius: s * 0.22, yRadius: s * 0.22).fill()
 
-    let emoji = "🍅" as NSString
-    let attrs: [NSAttributedString.Key: Any] = [.font: NSFont.systemFont(ofSize: s * 0.60)]
-    let size = emoji.size(withAttributes: attrs)
-    emoji.draw(
-        at: NSPoint(x: (s - size.width) / 2, y: (s - size.height) / 2),
-        withAttributes: attrs
-    )
+    let cx = s * 0.5, cy = s * 0.5
+    let ringR = s * 0.31
+    let ringW = s * 0.086
+
+    // Orange colours taken from the app (--grad-a / --grad-b / --accent).
+    let gradA = NSColor(red: 1.0, green: 0.541, blue: 0.361, alpha: 1) // #ff8a5c
+    let gradB = NSColor(red: 1.0, green: 0.341, blue: 0.341, alpha: 1) // #ff5757
+    let accent = NSColor(red: 1.0, green: 0.42, blue: 0.34, alpha: 1)  // #ff6b57
+
+    // 2. Soft orange glow behind the ring (echoes the UI ring's shadow).
+    ctx.saveGState()
+    if let glow = NSGradient(colors: [accent.withAlphaComponent(0.30), accent.withAlphaComponent(0.0)]) {
+        glow.draw(fromCenter: NSPoint(x: cx, y: cy), radius: 0,
+                  toCenter: NSPoint(x: cx, y: cy), radius: ringR + ringW * 1.6, options: [])
+    }
+    ctx.restoreGState()
+
+    // 3. Gradient-filled ring (annulus), 135° like the UI countdown ring.
+    let outer = ringR + ringW / 2
+    let inner = ringR - ringW / 2
+    let ringPath = NSBezierPath()
+    ringPath.appendOval(in: NSRect(x: cx - outer, y: cy - outer, width: outer * 2, height: outer * 2))
+    ringPath.appendOval(in: NSRect(x: cx - inner, y: cy - inner, width: inner * 2, height: inner * 2))
+    ringPath.windingRule = .evenOdd
+    ctx.saveGState()
+    ringPath.addClip()
+    NSGradient(starting: gradA, ending: gradB)?.draw(in: rect, angle: -45)
+    ctx.restoreGState()
+
+    // 4. Clock hands (classic 10:10 pose) + centre hub — reads as a watch.
+    func hand(_ clockDeg: CGFloat, _ length: CGFloat, _ width: CGFloat, _ color: NSColor) {
+        let a = clockDeg * .pi / 180
+        let p = NSBezierPath()
+        p.move(to: NSPoint(x: cx, y: cy))
+        p.line(to: NSPoint(x: cx + length * sin(a), y: cy + length * cos(a)))
+        p.lineWidth = width
+        p.lineCapStyle = .round
+        color.setStroke()
+        p.stroke()
+    }
+    let handColor = NSColor(red: 0.965, green: 0.95, blue: 0.925, alpha: 1) // warm white
+    hand(60, s * 0.205, s * 0.037, handColor)    // minute hand -> 2 o'clock
+    hand(-60, s * 0.135, s * 0.045, handColor)   // hour hand   -> 10 o'clock
+
+    let hub = s * 0.033
+    accent.setFill()
+    NSBezierPath(ovalIn: NSRect(x: cx - hub, y: cy - hub, width: hub * 2, height: hub * 2)).fill()
 
     image.unlockFocus()
     guard let tiff = image.tiffRepresentation,
