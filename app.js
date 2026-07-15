@@ -247,6 +247,11 @@
     // autoplay policies (Safari / WKWebView), so the chime can play later.
     ensureAudio();
     primeNotifyAudio();
+    // When noise starts below, its own play() unlocks the shared player;
+    // otherwise prime it now so flip-mode resumes can start audio later.
+    if (state.settings.noise === "off" || timer.mode !== "focus") {
+      primeNoiseAudio();
+    }
     setupFlipFocus(true); // user gesture — lets iOS grant motion access
     timer.running = true;
     timer.lastStart = Date.now();
@@ -417,6 +422,31 @@
       });
   }
 
+  /** Unlock the shared noise player inside a user gesture, so later
+      non-gesture starts (flip mode, auto-start) are allowed by iOS. */
+  let noisePrimed = false;
+
+  function primeNoiseAudio() {
+    if (noisePrimed) return;
+    noisePrimed = true;
+    const audio = ensureNoiseAudio();
+    if (!audio.paused) return; // already playing — nothing to unlock
+    const file = NOISE_FILES[state.settings.noise] || NOISE_FILES.white;
+    if (!audio.currentSrc) audio.src = SOUND_DIR + file;
+    audio.muted = true;
+    audio
+      .play()
+      .then(() => {
+        audio.pause();
+        audio.currentTime = 0;
+        audio.muted = false;
+      })
+      .catch(() => {
+        audio.muted = false;
+        noisePrimed = false; // try again on the next gesture
+      });
+  }
+
   /** endedMode: 'focus' | 'short' | 'long' — the session that just finished. */
   function playNotification(endedMode) {
     if (!state.settings.sound) return;
@@ -494,26 +524,52 @@
     traffic: "traffic.mp3",
   };
 
+  // ONE persistent player, reused for every soundscape. iOS unlocks an
+  // audio element per user gesture; reusing the element unlocked by the
+  // first Start tap lets flip-mode and auto-start resume playback from
+  // motion/timer events (which are not gestures). Keeping the src also
+  // resumes the same recording where it paused instead of restarting.
   let noiseAudio = null;
+  let noiseRetryTimer = null;
+
+  function ensureNoiseAudio() {
+    if (!noiseAudio) {
+      noiseAudio = new Audio();
+      noiseAudio.loop = true;
+      noiseAudio.preload = "auto";
+    }
+    return noiseAudio;
+  }
 
   function startNoise() {
     const type = state.settings.noise;
     if (type === "off" || timer.mode !== "focus") return;
     stopNoise();
     const file = NOISE_FILES[type];
-    if (file) {
-      const audio = new Audio(SOUND_DIR + file);
-      audio.loop = true;
-      audio.volume = state.settings.noiseVolume / 100;
-      noiseAudio = audio;
-      audio.play().catch((err) => {
-        console.warn("Soundscape file unavailable, using synthesizer:", err);
-        if (noiseAudio === audio) noiseAudio = null;
-        startSynthNoise(type);
-      });
+    if (!file) {
+      startSynthNoise(type);
       return;
     }
-    startSynthNoise(type);
+    const audio = ensureNoiseAudio();
+    const src = SOUND_DIR + file;
+    // Only swap the source when the soundscape actually changed, so a
+    // pause/resume continues the same recording seamlessly.
+    if (!audio.currentSrc || !audio.currentSrc.endsWith(file)) {
+      audio.src = src;
+    }
+    audio.volume = state.settings.noiseVolume / 100;
+    audio.play().catch(() => {
+      // Transient failures happen right after audio-session interruptions
+      // (calls, Siri, flip resume) — retry once before falling back.
+      clearTimeout(noiseRetryTimer);
+      noiseRetryTimer = setTimeout(() => {
+        if (state.settings.noise !== type || !timer.running) return;
+        audio.play().catch((err) => {
+          console.warn("Soundscape playback blocked, using synthesizer:", err);
+          startSynthNoise(type);
+        });
+      }, 400);
+    });
   }
 
   function startSynthNoise(type) {
@@ -664,11 +720,10 @@
   }
 
   function stopNoise() {
-    if (noiseAudio) {
-      noiseAudio.pause();
-      noiseAudio.removeAttribute("src");
-      noiseAudio = null;
-    }
+    clearTimeout(noiseRetryTimer);
+    // Pause only — the element (and its iOS gesture unlock, and the
+    // playback position) must survive for the next resume.
+    if (noiseAudio && !noiseAudio.paused) noiseAudio.pause();
     if (!noiseNodes) return;
     const { sources, nodes, timers } = noiseNodes;
     noiseNodes = null;
@@ -719,6 +774,51 @@
     document.title = timer.running
       ? `${fmtClock(timer.remaining)} · ${MODE_LABELS[timer.mode]} — Focus`
       : "Focus — Pomodoro Timer";
+    updateMediaSession();
+  }
+
+  /* ---------- Media session ----------
+     While a soundscape plays, iOS shows a Now Playing card (Dynamic
+     Island / lock screen). Feed it the countdown and the active task so
+     it reads as the timer, and let its play/pause buttons drive the
+     timer itself. */
+
+  let lastMediaTitle = "";
+
+  function updateMediaSession() {
+    if (!("mediaSession" in navigator)) return;
+    const title = `${fmtClock(timer.remaining)} · ${MODE_LABELS[timer.mode]}`;
+    if (title === lastMediaTitle) return; // metadata updates once per second
+    lastMediaTitle = title;
+    const task = state.tasks.find((t) => t.id === state.activeTaskId);
+    try {
+      navigator.mediaSession.metadata = new MediaMetadata({
+        title,
+        artist: task ? task.name : "Focus",
+        album: "Focus — Pomodoro Timer",
+        artwork: [
+          { src: "icons/icon-192.png", sizes: "192x192", type: "image/png" },
+          { src: "icons/icon-512.png", sizes: "512x512", type: "image/png" },
+        ],
+      });
+      navigator.mediaSession.playbackState = timer.running ? "playing" : "paused";
+    } catch (err) {
+      /* MediaMetadata not supported — the OS shows its default card */
+    }
+  }
+
+  function setupMediaSession() {
+    if (!("mediaSession" in navigator)) return;
+    const bind = (action, handler) => {
+      try {
+        navigator.mediaSession.setActionHandler(action, handler);
+      } catch (err) {
+        /* action not supported on this platform */
+      }
+    };
+    bind("play", () => startTimer());
+    bind("pause", () => pauseTimer());
+    bind("nexttrack", () => skipSession());
   }
 
   function renderControls() {
@@ -1758,7 +1858,14 @@
           state.settings.timerBg = bg.id;
           applyTimerBg();
         }
-        if (timer.running && timer.mode === "focus") startNoise();
+        if (timer.running && timer.mode === "focus") {
+          startNoise();
+        } else {
+          // Not playing yet — use this click (a gesture) to unlock the
+          // player so a flip-started session can play the sound later.
+          noisePrimed = false;
+          primeNoiseAudio();
+        }
         save();
         openSoundDialog(); // re-render to move the selection highlight
       });
@@ -2351,6 +2458,7 @@
     driveHandleRedirect(); // completes OAuth when returning from Google
     if (driveConnected()) driveSync(false); // pull/push on startup
     setupFlipFocus(false); // attaches directly where no permission is needed
+    setupMediaSession(); // Dynamic Island / lock-screen card shows the timer
 
     // The flip-mode setting only makes sense on an iPhone/iPad.
     const isIOS =

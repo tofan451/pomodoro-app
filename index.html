@@ -459,6 +459,17 @@
     </div>
   </dialog>
 
+  <!-- Landscape hint — web apps cannot lock orientation on iOS -->
+  <div class="rotate-overlay" aria-hidden="true">
+    <svg viewBox="0 0 24 24" width="44" height="44" fill="none" stroke="currentColor"
+         stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+      <rect x="8" y="2" width="8" height="14" rx="2"></rect>
+      <path d="M4 14a8 8 0 0 0 7 7.9"></path>
+      <polyline points="8.5 19 11 21.9 8 24"></polyline>
+    </svg>
+    <p>Focus works best in portrait.<br />Please rotate your phone back.</p>
+  </div>
+
   <!-- Toast notifications -->
   <div id="toast" class="toast" role="status" aria-live="polite"></div>
 

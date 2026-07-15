@@ -1668,6 +1668,29 @@ input[type="range"] {
   width: 100%;
 }
 
+/* ---------- Landscape hint (touch phones only) ---------- */
+.rotate-overlay {
+  display: none;
+}
+
+@media (orientation: landscape) and (max-height: 500px) and (pointer: coarse) {
+  .rotate-overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 100;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 16px;
+    background: var(--bg);
+    color: var(--muted);
+    text-align: center;
+    font-size: 0.95rem;
+    line-height: 1.5;
+  }
+}
+
 /* ---------- Toast ---------- */
 .toast {
   position: fixed;
