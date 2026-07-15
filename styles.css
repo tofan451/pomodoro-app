@@ -246,34 +246,41 @@ kbd {
   align-items: center;
 }
 
-/* Mode tabs */
-.mode-tabs {
-  display: flex;
-  gap: 4px;
+/* Active-task ribbon above the ring (same pill as the old mode tabs) */
+.task-ribbon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  max-width: min(100%, 340px);
   background: var(--surface-2);
   border: 1px solid var(--border);
   border-radius: 999px;
-  padding: 4px;
+  padding: 9px 22px;
   margin-bottom: 26px;
 }
 
-.mode-tab {
-  padding: 6px 16px;
-  border-radius: 999px;
-  font-size: 0.82rem;
+.ribbon-text {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.88rem;
   font-weight: 600;
-  color: var(--muted);
-  transition: color 0.2s, background 0.2s;
+  color: var(--text);
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.mode-tab:hover {
-  color: var(--text);
+.task-ribbon.is-empty .ribbon-text {
+  color: var(--muted);
+  font-weight: 500;
 }
 
-.mode-tab.is-active {
-  background: var(--accent);
-  color: #fff;
+.ribbon-icon {
+  display: inline-flex;
+  align-items: center;
+  flex-shrink: 0;
 }
 
 /* Circular timer */
@@ -343,13 +350,9 @@ kbd {
   transition: color 0.4s ease;
 }
 
-.active-task-label {
-  font-size: 0.82rem;
-  color: var(--muted);
-  max-width: 100%;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+.report-folder svg,
+.sound-off svg {
+  vertical-align: -2px;
 }
 
 /* Cycle dots */
@@ -1057,8 +1060,11 @@ kbd {
   border-radius: 10px;
   background: var(--surface-2);
   border: 1px solid var(--border);
-  font-size: 1.15rem;
-  transition: border-color 0.15s, background 0.15s, transform 0.12s;
+  color: var(--muted);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transition: border-color 0.15s, background 0.15s, transform 0.12s, color 0.15s;
 }
 
 .icon-pick:hover {
@@ -1068,6 +1074,7 @@ kbd {
 .icon-pick.is-selected {
   border-color: var(--accent);
   background: var(--accent-soft);
+  color: var(--accent);
 }
 
 .field-wide {
@@ -1121,6 +1128,9 @@ kbd {
 }
 
 .move-option {
+  display: flex;
+  align-items: center;
+  gap: 10px;
   text-align: left;
   padding: 11px 14px;
   border-radius: 10px;
@@ -1138,6 +1148,13 @@ kbd {
 .move-option.is-current {
   background: var(--accent-soft);
   border-color: var(--accent);
+}
+
+.move-option-icon {
+  display: inline-flex;
+  align-items: center;
+  color: var(--muted);
+  flex-shrink: 0;
 }
 
 /* Folder chip in the reports table */
@@ -1194,7 +1211,6 @@ kbd {
 /* ---------- Full-window timer (zen mode) ---------- */
 body.zen .app-header,
 body.zen .tasks-card,
-body.zen .mode-tabs,
 body.zen .cycle-dots,
 body.zen .hint {
   display: none;
@@ -1232,8 +1248,8 @@ body.zen .mode-label {
   font-size: clamp(0.8rem, 2vmin, 1.15rem);
 }
 
-body.zen .active-task-label {
-  font-size: clamp(0.85rem, 1.9vmin, 1.1rem);
+body.zen .ribbon-text {
+  font-size: clamp(0.9rem, 2vmin, 1.15rem);
 }
 
 body.zen .controls {
@@ -1421,7 +1437,7 @@ body.zen .controls {
   stroke: rgba(255, 255, 255, 0.14);
 }
 
-.timer-card:not([data-bg="default"]) .mode-tabs {
+.timer-card:not([data-bg="default"]) .task-ribbon {
   background: rgba(0, 0, 0, 0.28);
   border-color: rgba(255, 255, 255, 0.09);
 }
@@ -1502,8 +1518,16 @@ body.zen .controls {
   min-width: 0;
 }
 
-.record-emoji {
-  font-size: 1.4rem;
+.record-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  border-radius: 10px;
+  background: var(--accent-soft);
+  color: var(--accent);
+  flex-shrink: 0;
 }
 
 .record-label {
@@ -1705,9 +1729,12 @@ body.layout-narrow .timer-card {
   padding: 20px 16px;
 }
 
-body.layout-narrow .mode-tab {
-  padding: 6px 11px;
-  font-size: 0.76rem;
+body.layout-narrow .task-ribbon {
+  padding: 8px 16px;
+}
+
+body.layout-narrow .ribbon-text {
+  font-size: 0.82rem;
 }
 
 body.layout-narrow .start-btn {

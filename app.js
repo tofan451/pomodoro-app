@@ -55,10 +55,48 @@
     "#ff6b57", "#ffb340", "#3ecf8e", "#4cc9f0",
     "#5b9dff", "#b07cff", "#f472b6", "#94a3b8",
   ];
+  // Minimal line icons (stroke = currentColor) matching the app's flat
+  // interface. Folder records store the icon's key; legacy emoji values
+  // from older saves are migrated in load().
+  const ICONS = {
+    folder: '<path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>',
+    briefcase: '<rect x="2" y="7" width="20" height="14" rx="2"/><path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16"/>',
+    book: '<path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/>',
+    code: '<polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/>',
+    pen: '<path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4z"/>',
+    flask: '<path d="M10 2v6.3L4.6 17.7A2 2 0 0 0 6.4 21h11.2a2 2 0 0 0 1.8-3.3L14 8.3V2"/><line x1="8.5" y1="2" x2="15.5" y2="2"/>',
+    activity: '<polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/>',
+    zap: '<polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/>',
+    heart: '<path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/>',
+    home: '<path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/>',
+    target: '<circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="6"/><circle cx="12" cy="12" r="2"/>',
+    star: '<polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/>',
+    leaf: '<path d="M11 20A7 7 0 0 1 4 13C4 8 8 4 20 2c-1 12-5 16-9 18z"/><path d="M4 21c2-3 5-6 9-8"/>',
+    music: '<path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/>',
+    inbox: '<polyline points="22 12 16 12 14 15 10 15 8 12 2 12"/><path d="M5.45 5.11L2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"/>',
+    "volume-off": '<polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><line x1="23" y1="9" x2="17" y2="15"/><line x1="17" y1="9" x2="23" y2="15"/>',
+  };
+
+  function iconSvg(name, size = 16) {
+    const body = ICONS[name] || ICONS.folder;
+    return (
+      `<svg viewBox="0 0 24 24" width="${size}" height="${size}" fill="none" ` +
+      `stroke="currentColor" stroke-width="2" stroke-linecap="round" ` +
+      `stroke-linejoin="round" aria-hidden="true">${body}</svg>`
+    );
+  }
+
   const FOLDER_ICONS = [
-    "📁", "💼", "📚", "💻", "🎨", "🧪",
-    "🏃", "🧠", "📝", "🏠", "🎯", "⭐",
+    "folder", "briefcase", "book", "code", "pen", "flask",
+    "activity", "zap", "heart", "home", "target", "star",
   ];
+
+  // Old saves stored emoji in folder.icon — map them to line icons.
+  const LEGACY_ICON_MAP = {
+    "📁": "folder", "💼": "briefcase", "📚": "book", "💻": "code",
+    "🎨": "pen", "📝": "pen", "🧪": "flask", "🏃": "activity",
+    "🧠": "zap", "🏠": "home", "🎯": "target", "⭐": "star",
+  };
 
   const state = {
     settings: { ...DEFAULT_SETTINGS },
@@ -82,6 +120,12 @@
       }
       delete state.settings.autoStart;
       state.folders = Array.isArray(data.folders) ? data.folders : [];
+      // Migrate emoji icons from older saves to the line-icon keys.
+      for (const folder of state.folders) {
+        if (folder.icon && !ICONS[folder.icon]) {
+          folder.icon = LEGACY_ICON_MAP[folder.icon] || "folder";
+        }
+      }
       state.tasks = Array.isArray(data.tasks) ? data.tasks : [];
       state.sessions = Array.isArray(data.sessions) ? data.sessions : [];
       state.activeTaskId = data.activeTaskId ?? null;
@@ -700,16 +744,21 @@
   function renderActiveTaskLabel() {
     const task = state.tasks.find((t) => t.id === state.activeTaskId);
     const folder = folderOf(task);
-    el.activeTaskLabel.textContent = task
-      ? (folder ? `${folder.icon} ${task.name}` : task.name)
-      : "No task selected";
+    el.activeTaskLabel.innerHTML = "";
+    if (task && folder) {
+      const icon = document.createElement("span");
+      icon.className = "ribbon-icon";
+      icon.innerHTML = iconSvg(folder.icon, 14);
+      icon.style.color = folder.color;
+      el.activeTaskLabel.appendChild(icon);
+    }
+    el.activeTaskLabel.appendChild(
+      document.createTextNode(task ? task.name : "No task selected")
+    );
+    $("#task-ribbon").classList.toggle("is-empty", !task);
   }
 
   function renderTimer() {
-    document.querySelectorAll(".mode-tab").forEach((tab) => {
-      tab.classList.toggle("is-active", tab.dataset.mode === timer.mode);
-      tab.setAttribute("aria-selected", tab.dataset.mode === timer.mode);
-    });
     el.modeLabel.textContent = MODE_LABELS[timer.mode];
     renderClock();
     renderControls();
@@ -778,9 +827,10 @@
 
     const icon = document.createElement("span");
     icon.className = "folder-icon";
-    icon.textContent = folder.icon;
+    icon.innerHTML = iconSvg(folder.icon, 14);
     icon.style.background = folder.color + "26"; // ~15% alpha tint
     icon.style.borderColor = folder.color;
+    icon.style.color = folder.color; // the SVG stroke uses currentColor
 
     const name = document.createElement("span");
     name.className = "folder-name";
@@ -808,12 +858,12 @@
     el.taskFolderSelect.innerHTML = "";
     const inbox = document.createElement("option");
     inbox.value = "";
-    inbox.textContent = "📥 Inbox";
+    inbox.textContent = "Inbox";
     el.taskFolderSelect.appendChild(inbox);
     for (const folder of state.folders) {
       const option = document.createElement("option");
       option.value = folder.id;
-      option.textContent = `${folder.icon} ${folder.name}`;
+      option.textContent = folder.name;
       el.taskFolderSelect.appendChild(option);
     }
     // Keep the previous choice selected across re-renders when possible.
@@ -938,7 +988,7 @@
       const btn = document.createElement("button");
       btn.type = "button";
       btn.className = "icon-pick" + (icon === pickedIcon ? " is-selected" : "");
-      btn.textContent = icon;
+      btn.innerHTML = iconSvg(icon, 18);
       btn.setAttribute("aria-label", `Icon ${icon}`);
       btn.addEventListener("click", () => {
         pickedIcon = icon;
@@ -1016,7 +1066,7 @@
     options.innerHTML = "";
 
     const choices = [
-      { id: null, icon: "📥", name: "Inbox", color: "" },
+      { id: null, icon: "inbox", name: "Inbox", color: "" },
       ...state.folders,
     ];
     for (const choice of choices) {
@@ -1025,7 +1075,13 @@
       btn.className =
         "move-option" +
         ((task.folderId || null) === choice.id ? " is-current" : "");
-      btn.textContent = `${choice.icon} ${choice.name}`;
+      const iconWrap = document.createElement("span");
+      iconWrap.className = "move-option-icon";
+      iconWrap.innerHTML = iconSvg(choice.icon, 15);
+      if (choice.color) iconWrap.style.color = choice.color;
+      const label = document.createElement("span");
+      label.textContent = choice.name;
+      btn.append(iconWrap, label);
       if (choice.color) btn.style.borderLeftColor = choice.color;
       btn.addEventListener("click", () => {
         task.folderId = choice.id;
@@ -1321,7 +1377,8 @@
       if (row.folder) {
         const chip = document.createElement("span");
         chip.className = "report-folder";
-        chip.textContent = `${row.folder.icon} ${row.folder.name}`;
+        chip.innerHTML = iconSvg(row.folder.icon, 11) + " ";
+        chip.appendChild(document.createTextNode(row.folder.name));
         chip.style.color = row.folder.color;
         tdName.append(" ", chip);
       }
@@ -1675,7 +1732,7 @@
     off.className =
       "bg-option sound-off" + (state.settings.noise === "off" ? " is-selected" : "");
     const offLabel = document.createElement("span");
-    offLabel.textContent = "🔇 Off";
+    offLabel.innerHTML = iconSvg("volume-off", 14) + " Off";
     off.appendChild(offLabel);
     off.addEventListener("click", () => {
       state.settings.noise = "off";
@@ -2139,10 +2196,6 @@
     );
     $("#reset-btn").addEventListener("click", resetTimer);
     $("#skip-btn").addEventListener("click", skipSession);
-
-    document.querySelectorAll(".mode-tab").forEach((tab) => {
-      tab.addEventListener("click", () => setMode(tab.dataset.mode));
-    });
 
     document.querySelectorAll(".view-btn").forEach((btn) => {
       btn.addEventListener("click", () => switchView(btn.dataset.view));
