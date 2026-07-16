@@ -522,14 +522,16 @@ kbd {
 
 .task-check {
   flex-shrink: 0;
-  width: 20px;
-  height: 20px;
+  /* Small, thin ring tinted like the task's folder/project (set inline),
+     sized to sit quietly next to the 0.8rem task text. */
+  width: 15px;
+  height: 15px;
   border-radius: 50%;
-  border: 2px solid var(--muted);
+  border: 1.5px solid var(--muted);
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  font-size: 0.7rem;
+  font-size: 0.55rem;
   color: transparent;
   transition: background 0.2s, border-color 0.2s, color 0.2s;
 }
@@ -620,11 +622,14 @@ kbd {
 }
 
 #tag-form {
+  display: flex;
+  gap: 8px;
   margin: 6px 0 4px;
 }
 
 #tag-input {
-  width: 100%;
+  flex: 1;
+  min-width: 0;
   padding: 10px 12px;
   border-radius: 10px;
   border: 1px solid var(--border);

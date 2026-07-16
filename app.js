@@ -1155,8 +1155,12 @@
     name.textContent = task.name;
     // Tasks take their folder's / project's colour (done tasks stay muted
     // via CSS, which the inline style would override — so skip those).
+    // The check ring is tinted the same way, matching the folder icons.
     const group = groupOf(task);
-    if (group && !task.done) name.style.color = group.color;
+    if (group && !task.done) {
+      name.style.color = group.color;
+      check.style.borderColor = group.color;
+    }
 
     // Tag chips (clickable to filter the list by that tag).
     const tags = document.createElement("span");
@@ -1175,7 +1179,7 @@
 
     const move = document.createElement("button");
     move.className = "task-move";
-    move.textContent = "📂";
+    move.innerHTML = iconSvg("folder", 14); // line icon, matches the rest of the UI
     move.title = "Move to folder or project";
     move.setAttribute("aria-label", `Move task ${task.name}`);
 
@@ -2839,13 +2843,22 @@
     $("#folder-form").addEventListener("submit", submitGroup);
     $("#move-cancel").addEventListener("click", () => $("#move-dialog").close());
 
-    // Tags: editor dialog + filter bar.
-    $("#tag-close").addEventListener("click", () => $("#tag-dialog").close());
-    $("#tag-form").addEventListener("submit", (event) => {
-      event.preventDefault();
+    // Tags: editor dialog + filter bar. Submitting the wee form (Add button
+    // or Enter) adds the typed tag; Done also picks up any pending text so
+    // "type, then close" still works.
+    const submitPendingTag = () => {
       const task = state.tasks.find((t) => t.id === tagDialogTaskId);
       if (task) addTag(task, $("#tag-input").value);
       $("#tag-input").value = "";
+      $("#tag-input").focus();
+    };
+    $("#tag-close").addEventListener("click", () => {
+      if ($("#tag-input").value.trim()) submitPendingTag();
+      $("#tag-dialog").close();
+    });
+    $("#tag-form").addEventListener("submit", (event) => {
+      event.preventDefault();
+      submitPendingTag();
     });
     $("#tag-filter-clear").addEventListener("click", () => setTagFilter(null));
 

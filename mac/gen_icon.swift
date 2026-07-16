@@ -18,8 +18,9 @@ func render(_ pixels: Int) -> Data? {
     NSBezierPath(roundedRect: rect, xRadius: s * 0.22, yRadius: s * 0.22).fill()
 
     let cx = s * 0.5, cy = s * 0.5
-    let ringR = s * 0.31
-    let ringW = s * 0.086
+    // Large, thin ring: fills more of the tile and reads more modern.
+    let ringR = s * 0.36
+    let ringW = s * 0.058
 
     // Orange colours taken from the app (--grad-a / --grad-b / --accent).
     let gradA = NSColor(red: 1.0, green: 0.541, blue: 0.361, alpha: 1) // #ff8a5c
@@ -58,10 +59,10 @@ func render(_ pixels: Int) -> Data? {
         p.stroke()
     }
     let handColor = NSColor(red: 0.965, green: 0.95, blue: 0.925, alpha: 1) // warm white
-    hand(60, s * 0.205, s * 0.037, handColor)    // minute hand -> 2 o'clock
-    hand(-60, s * 0.135, s * 0.045, handColor)   // hour hand   -> 10 o'clock
+    hand(60, s * 0.24, s * 0.034, handColor)     // minute hand -> 2 o'clock
+    hand(-60, s * 0.16, s * 0.04, handColor)     // hour hand   -> 10 o'clock
 
-    let hub = s * 0.033
+    let hub = s * 0.03
     accent.setFill()
     NSBezierPath(ovalIn: NSRect(x: cx - hub, y: cy - hub, width: hub * 2, height: hub * 2)).fill()
 
