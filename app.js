@@ -48,12 +48,17 @@
     // iPhone flip mode: pause when the phone is picked up, resume when it
     // is placed face-down (needs a motion sensor; no-op on desktops).
     flipFocus: false,
+    // When on, ticking a task done moves it to the Archive section at the
+    // bottom of the list instead of leaving it in place.
+    archiveDone: false,
   };
 
   // Presets offered in the "New Folder" dialog.
   const FOLDER_COLORS = [
     "#ff6b57", "#ffb340", "#3ecf8e", "#4cc9f0",
     "#5b9dff", "#b07cff", "#f472b6", "#94a3b8",
+    "#f43f5e", "#fb923c", "#facc15", "#a3e635",
+    "#2dd4bf", "#38bdf8", "#818cf8", "#e879f9",
   ];
   // Minimal line icons (stroke = currentColor) matching the app's flat
   // interface. Folder records store the icon's key; legacy emoji values
@@ -76,6 +81,21 @@
     inbox: '<polyline points="22 12 16 12 14 15 10 15 8 12 2 12"/><path d="M5.45 5.11L2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"/>',
     "volume-off": '<polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><line x1="23" y1="9" x2="17" y2="15"/><line x1="17" y1="9" x2="23" y2="15"/>',
     tag: '<path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"/><line x1="7" y1="7" x2="7.01" y2="7"/>',
+    trash: '<polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><line x1="10" y1="11" x2="10" y2="17"/><line x1="14" y1="11" x2="14" y2="17"/>',
+    archive: '<polyline points="21 8 21 21 3 21 3 8"/><rect x="1" y="3" width="22" height="5"/><line x1="10" y1="12" x2="14" y2="12"/>',
+    globe: '<circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/>',
+    calendar: '<rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/>',
+    coffee: '<path d="M18 8h1a4 4 0 0 1 0 8h-1"/><path d="M2 8h16v9a4 4 0 0 1-4 4H6a4 4 0 0 1-4-4V8z"/><line x1="6" y1="1" x2="6" y2="4"/><line x1="10" y1="1" x2="10" y2="4"/><line x1="14" y1="1" x2="14" y2="4"/>',
+    cloud: '<path d="M18 10h-1.26A8 8 0 1 0 9 20h9a5 5 0 0 0 0-10z"/>',
+    moon: '<path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/>',
+    sun: '<circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/>',
+    bell: '<path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/>',
+    bookmark: '<path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"/>',
+    layers: '<polygon points="12 2 2 7 12 12 22 7 12 2"/><polyline points="2 17 12 22 22 17"/><polyline points="2 12 12 17 22 12"/>',
+    mail: '<path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/>',
+    camera: '<path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/>',
+    wrench: '<path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/>',
+    graduation: '<path d="M22 10L12 5 2 10l10 5 10-5z"/><path d="M6 12v5c0 1.7 2.7 3 6 3s6-1.3 6-3v-5"/>',
   };
 
   function iconSvg(name, size = 16) {
@@ -90,6 +110,8 @@
   const FOLDER_ICONS = [
     "folder", "briefcase", "book", "code", "pen", "flask",
     "activity", "zap", "heart", "home", "target", "star",
+    "globe", "calendar", "coffee", "cloud", "moon", "sun",
+    "bell", "bookmark", "layers", "mail", "camera", "graduation",
   ];
 
   // Old saves stored emoji in folder.icon — map them to line icons.
@@ -105,7 +127,7 @@
     // Projects live inside a folder (folderId, null = top level) and hold
     // tasks. Hierarchy: Folder ▸ (subfolders) ▸ Project ▸ Tasks.
     projects: [], // { id, name, color, icon, folderId, collapsed, createdAt }
-    tasks: [], // { id, name, done, folderId, projectId, createdAt }
+    tasks: [], // { id, name, done, archived, folderId, projectId, tags, createdAt }
     sessions: [], // { id, taskId, seconds, endedAt, completed } — focus time only
     activeTaskId: null,
     cycleCount: 0, // completed focus sessions since last long break
@@ -878,9 +900,9 @@
     return state.projects.filter((p) => (p.folderId || null) === (folderId || null));
   }
 
-  /** Tasks that belong to a project. */
+  /** Tasks that belong to a project (archived ones live in the Archive). */
   function tasksInProject(projectId) {
-    return state.tasks.filter((t) => t.projectId === projectId);
+    return state.tasks.filter((t) => t.projectId === projectId && !t.archived);
   }
 
   /** Which folder a task ultimately sits in — via its project, or directly. */
@@ -899,10 +921,11 @@
     return state.folders.find((f) => f.id === task.folderId);
   }
 
-  /** All tasks in a folder and any folder/project nested inside it. */
+  /** All tasks in a folder and any folder/project nested inside it
+      (archived ones live in the Archive, so they don't count here). */
   function tasksInSubtree(folderId) {
     const ids = new Set([folderId, ...descendantFolderIds(folderId)]);
-    return state.tasks.filter((t) => ids.has(effectiveFolderId(t)));
+    return state.tasks.filter((t) => !t.archived && ids.has(effectiveFolderId(t)));
   }
 
   /** Folders and projects in display order, each tagged with its type and
@@ -986,6 +1009,7 @@
   /* ---------- Tags ---------- */
 
   let tagFilter = null; // active tag filter (in-memory), or null
+  let archiveOpen = false; // whether the Archive section is expanded
 
   /** A stable colour per tag name (hashed into the folder palette). */
   function tagColor(name) {
@@ -1129,6 +1153,10 @@
     const name = document.createElement("span");
     name.className = "task-name";
     name.textContent = task.name;
+    // Tasks take their folder's / project's colour (done tasks stay muted
+    // via CSS, which the inline style would override — so skip those).
+    const group = groupOf(task);
+    if (group && !task.done) name.style.color = group.color;
 
     // Tag chips (clickable to filter the list by that tag).
     const tags = document.createElement("span");
@@ -1153,7 +1181,7 @@
 
     const del = document.createElement("button");
     del.className = "task-delete";
-    del.textContent = "×";
+    del.innerHTML = iconSvg("trash", 13); // trash icon, not a "×" glyph
     del.title = "Delete task";
     del.setAttribute("aria-label", `Delete task ${task.name}`);
 
@@ -1206,7 +1234,7 @@
 
     const del = document.createElement("button");
     del.className = "task-delete folder-delete";
-    del.textContent = "×";
+    del.innerHTML = iconSvg("trash", 13); // trash icon, not a "×" glyph
     del.title = `Delete ${type} (tasks are kept)`;
     del.setAttribute("aria-label", `Delete ${type} ${item.name}`);
 
@@ -1241,12 +1269,13 @@
   function renderTasks() {
     const totals = taskTotals();
     el.taskList.innerHTML = "";
-    el.taskCount.textContent = String(state.tasks.length);
+    const active = state.tasks.filter((t) => !t.archived);
+    el.taskCount.textContent = String(active.length);
     renderTagFilterBar();
 
     // Tag-filter mode: a flat list of matching tasks (grouping is set aside).
     if (tagFilter) {
-      const matches = state.tasks.filter((t) => (t.tags || []).includes(tagFilter));
+      const matches = active.filter((t) => (t.tags || []).includes(tagFilter));
       el.taskEmpty.style.display = matches.length ? "none" : "block";
       for (const task of matches) {
         el.taskList.appendChild(makeTaskItem(task, totals, false));
@@ -1264,7 +1293,7 @@
     const folderIds = new Set(state.folders.map((f) => f.id));
     const projectIds = new Set(state.projects.map((p) => p.id));
     // Loose = not in a valid project and not directly in a valid folder.
-    const loose = state.tasks.filter(
+    const loose = active.filter(
       (t) => !projectIds.has(t.projectId) && !folderIds.has(t.folderId)
     );
     const hasGroups = state.folders.length || state.projects.length;
@@ -1287,7 +1316,7 @@
       if (folder.collapsed) return;
       for (const child of childFolders(folder.id)) renderFolder(child, depth + 1);
       for (const project of childProjects(folder.id)) renderProject(project, depth + 1);
-      const direct = state.tasks.filter(
+      const direct = active.filter(
         (t) => !projectIds.has(t.projectId) && t.folderId === folder.id
       );
       for (const task of direct) {
@@ -1306,6 +1335,25 @@
     }
     for (const task of loose) {
       el.taskList.appendChild(makeTaskItem(task, totals, false));
+    }
+
+    // Archive: completed tasks moved out of the way. The header toggles the
+    // list open/closed; unticking a task in here restores it to its place.
+    const archived = state.tasks.filter((t) => t.archived);
+    if (archived.length) {
+      const label = document.createElement("li");
+      label.className = "inbox-label archive-label" + (archiveOpen ? " is-open" : "");
+      label.innerHTML =
+        iconSvg("archive", 13) +
+        ` Archive · ${archived.length} <span class="archive-caret">${archiveOpen ? "▾" : "▸"}</span>`;
+      el.taskList.appendChild(label);
+      if (archiveOpen) {
+        for (const task of archived) {
+          const li = makeTaskItem(task, totals, false);
+          li.classList.add("is-archived");
+          el.taskList.appendChild(li);
+        }
+      }
     }
 
     renderTaskTargetSelect();
@@ -1357,6 +1405,13 @@
       return;
     }
 
+    // Archive header: expand / collapse the archived list.
+    if (event.target.closest(".archive-label")) {
+      archiveOpen = !archiveOpen;
+      renderTasks();
+      return;
+    }
+
     const li = event.target.closest(".task-item");
     if (!li) return;
     const task = state.tasks.find((t) => t.id === li.dataset.id);
@@ -1383,6 +1438,15 @@
     }
     if (event.target.closest(".task-check")) {
       task.done = !task.done;
+      // Ticked done → into the Archive (when the setting is on).
+      // Unticked (including from inside the Archive) → back to its place.
+      if (task.done && state.settings.archiveDone) {
+        task.archived = true;
+        if (state.activeTaskId === task.id) state.activeTaskId = null;
+        showToast(`“${task.name}” moved to the Archive`);
+      } else if (!task.done) {
+        task.archived = false;
+      }
     } else {
       // Clicking the row selects / deselects the active task.
       state.activeTaskId = state.activeTaskId === task.id ? null : task.id;
@@ -2100,6 +2164,7 @@
     $("#set-autostop").checked = state.settings.autoStartMode === "until-long";
     updateAutostopRow();
     $("#set-match").checked = state.settings.matchNoise;
+    $("#set-archive").checked = state.settings.archiveDone;
     $("#set-flip").checked = state.settings.flipFocus;
   }
 
@@ -2122,6 +2187,12 @@
         ? "until-long"
         : "all";
     s.matchNoise = $("#set-match").checked;
+    s.archiveDone = $("#set-archive").checked;
+    // Turning the option on sweeps already-done tasks into the Archive too.
+    if (s.archiveDone) {
+      for (const t of state.tasks) if (t.done) t.archived = true;
+      renderTasks();
+    }
     s.flipFocus = $("#set-flip").checked;
     if (s.flipFocus) setupFlipFocus(true); // Save click = user gesture for iOS
     save();

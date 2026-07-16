@@ -543,7 +543,9 @@ kbd {
 .task-name {
   flex: 1;
   min-width: 0;
-  font-size: 0.9rem;
+  /* Smaller than folder/project names (0.85rem bold) — tasks are the leaves.
+     Their colour is set inline to match the parent folder / project. */
+  font-size: 0.8rem;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -1162,6 +1164,28 @@ kbd {
   font-weight: 700;
   color: var(--muted);
   user-select: none;
+}
+
+/* Archive section: clickable header + dimmed archived rows */
+.archive-label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+  border-radius: 10px;
+}
+
+.archive-label:hover {
+  background: var(--surface-2);
+}
+
+.archive-caret {
+  margin-left: auto;
+  font-size: 0.7rem;
+}
+
+.task-item.is-archived {
+  opacity: 0.6;
 }
 
 /* Color / icon pickers in the New Folder dialog */
