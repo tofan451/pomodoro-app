@@ -26,7 +26,7 @@
     </div>
 
     <nav class="view-nav" aria-label="Main views">
-      <button id="settings-btn" class="nav-btn" aria-label="Settings" title="Settings">
+      <button id="settings-btn" class="nav-btn view-btn" data-view="settings" aria-label="Settings" title="Settings">
         <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor"
              stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
           <circle cx="12" cy="12" r="3"></circle>
@@ -126,6 +126,7 @@
             <h2>Tasks</h2>
             <div class="header-actions">
               <button id="new-folder-btn" class="mini-btn" type="button">+ Folder</button>
+              <button id="new-project-btn" class="mini-btn" type="button">+ Project</button>
               <span id="task-count" class="badge">0</span>
             </div>
           </div>
@@ -135,6 +136,12 @@
             <select id="task-folder" class="folder-select" aria-label="Folder for the new task"></select>
             <button type="submit" class="add-btn" aria-label="Add task">+</button>
           </form>
+
+          <div id="tag-filter-bar" class="tag-filter-bar" hidden>
+            <span class="tag-filter-text">Filtered by</span>
+            <span id="tag-filter-label" class="task-tag"></span>
+            <button id="tag-filter-clear" type="button" class="tag-filter-clear">Clear ✕</button>
+          </div>
 
           <ul id="task-list" class="task-list" aria-label="Task list"></ul>
           <p id="task-empty" class="empty-note">No tasks yet. Add one above, then select it to track your focus time.</p>
@@ -260,12 +267,12 @@
 
       </div>
     </section>
-  </main>
 
-  <!-- ===================== Settings dialog ===================== -->
-  <dialog id="settings-dialog" class="settings-dialog">
-    <form method="dialog" id="settings-form">
-      <h2>Settings</h2>
+    <!-- ===================== Settings view ===================== -->
+    <section id="view-settings" class="view">
+      <div class="settings-page">
+        <form id="settings-form">
+          <h2>Settings</h2>
 
       <div class="field-grid">
         <label class="field">
@@ -337,8 +344,10 @@
         <button type="button" id="settings-cancel" class="btn-ghost">Cancel</button>
         <button type="submit" value="save" class="btn-primary">Save</button>
       </div>
-    </form>
-  </dialog>
+        </form>
+      </div>
+    </section>
+  </main>
 
   <!-- ===================== New folder dialog ===================== -->
   <dialog id="folder-dialog" class="settings-dialog">
@@ -351,7 +360,7 @@
       </label>
 
       <label class="field field-wide">
-        <span>Parent folder</span>
+        <span id="folder-parent-label">Parent folder</span>
         <select id="folder-parent" aria-label="Parent folder"></select>
       </label>
 
@@ -370,10 +379,25 @@
 
   <!-- ===================== Move-to-folder dialog ===================== -->
   <dialog id="move-dialog" class="settings-dialog">
-    <h2>Move to folder</h2>
+    <h2>Move to folder or project</h2>
     <div id="move-options" class="move-options"></div>
     <div class="dialog-actions">
       <button type="button" id="move-cancel" class="btn-ghost">Cancel</button>
+    </div>
+  </dialog>
+
+  <!-- ===================== Tag editor dialog ===================== -->
+  <dialog id="tag-dialog" class="settings-dialog">
+    <h2>Tags</h2>
+    <p id="tag-task-name" class="dialog-note"></p>
+    <div id="tag-current" class="tag-chip-row"></div>
+    <form id="tag-form" autocomplete="off">
+      <input id="tag-input" type="text" maxlength="24" placeholder="Add a tag and press Enter" aria-label="New tag" />
+    </form>
+    <p id="tag-suggestions-label" class="picker-label" hidden>Existing tags</p>
+    <div id="tag-suggestions" class="tag-chip-row"></div>
+    <div class="dialog-actions">
+      <button type="button" id="tag-close" class="btn-primary">Done</button>
     </div>
   </dialog>
 

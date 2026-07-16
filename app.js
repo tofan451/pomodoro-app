@@ -75,6 +75,7 @@
     music: '<path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/>',
     inbox: '<polyline points="22 12 16 12 14 15 10 15 8 12 2 12"/><path d="M5.45 5.11L2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"/>',
     "volume-off": '<polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><line x1="23" y1="9" x2="17" y2="15"/><line x1="17" y1="9" x2="23" y2="15"/>',
+    tag: '<path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"/><line x1="7" y1="7" x2="7.01" y2="7"/>',
   };
 
   function iconSvg(name, size = 16) {
@@ -101,7 +102,10 @@
   const state = {
     settings: { ...DEFAULT_SETTINGS },
     folders: [], // { id, name, color, icon, parentId, collapsed, createdAt }
-    tasks: [], // { id, name, done, folderId, createdAt }
+    // Projects live inside a folder (folderId, null = top level) and hold
+    // tasks. Hierarchy: Folder ▸ (subfolders) ▸ Project ▸ Tasks.
+    projects: [], // { id, name, color, icon, folderId, collapsed, createdAt }
+    tasks: [], // { id, name, done, folderId, projectId, createdAt }
     sessions: [], // { id, taskId, seconds, endedAt, completed } — focus time only
     activeTaskId: null,
     cycleCount: 0, // completed focus sessions since last long break
@@ -120,10 +124,11 @@
       }
       delete state.settings.autoStart;
       state.folders = Array.isArray(data.folders) ? data.folders : [];
+      state.projects = Array.isArray(data.projects) ? data.projects : [];
       // Migrate emoji icons from older saves to the line-icon keys.
-      for (const folder of state.folders) {
-        if (folder.icon && !ICONS[folder.icon]) {
-          folder.icon = LEGACY_ICON_MAP[folder.icon] || "folder";
+      for (const group of [...state.folders, ...state.projects]) {
+        if (group.icon && !ICONS[group.icon]) {
+          group.icon = LEGACY_ICON_MAP[group.icon] || "folder";
         }
       }
       state.tasks = Array.isArray(data.tasks) ? data.tasks : [];
@@ -754,11 +759,12 @@
     taskList: $("#task-list"),
     taskEmpty: $("#task-empty"),
     taskCount: $("#task-count"),
+    tagFilterBar: $("#tag-filter-bar"),
     toast: $("#toast"),
-    dialog: $("#settings-dialog"),
     folderDialog: $("#folder-dialog"),
     folderName: $("#folder-name"),
     folderParent: $("#folder-parent"),
+    folderParentLabel: $("#folder-parent-label"),
     folderTitle: $("#folder-dialog-title"),
     folderSubmit: $("#folder-submit"),
     colorPicker: $("#color-picker"),
@@ -867,10 +873,57 @@
     return out;
   }
 
-  /** All tasks in a folder and any folder nested inside it. */
+  /** Direct child projects of a folder (use null for top-level projects). */
+  function childProjects(folderId) {
+    return state.projects.filter((p) => (p.folderId || null) === (folderId || null));
+  }
+
+  /** Tasks that belong to a project. */
+  function tasksInProject(projectId) {
+    return state.tasks.filter((t) => t.projectId === projectId);
+  }
+
+  /** Which folder a task ultimately sits in — via its project, or directly. */
+  function effectiveFolderId(task) {
+    if (task.projectId) {
+      const p = state.projects.find((pr) => pr.id === task.projectId);
+      return p ? p.folderId || null : null;
+    }
+    return task.folderId || null;
+  }
+
+  /** The project or folder a task belongs to (for the active-task label). */
+  function groupOf(task) {
+    if (!task) return undefined;
+    if (task.projectId) return state.projects.find((p) => p.id === task.projectId);
+    return state.folders.find((f) => f.id === task.folderId);
+  }
+
+  /** All tasks in a folder and any folder/project nested inside it. */
   function tasksInSubtree(folderId) {
     const ids = new Set([folderId, ...descendantFolderIds(folderId)]);
-    return state.tasks.filter((t) => ids.has(t.folderId));
+    return state.tasks.filter((t) => ids.has(effectiveFolderId(t)));
+  }
+
+  /** Folders and projects in display order, each tagged with its type and
+      depth. Order mirrors the task list: folder ▸ subfolders ▸ projects. Used
+      by the task-target dropdown and the move dialog. */
+  function groupsInOrder() {
+    const list = [];
+    const walk = (folderId, depth) => {
+      for (const folder of childFolders(folderId)) {
+        list.push({ type: "folder", item: folder, depth });
+        walk(folder.id, depth + 1);
+        for (const project of childProjects(folder.id)) {
+          list.push({ type: "project", item: project, depth: depth + 1 });
+        }
+      }
+    };
+    walk(null, 0);
+    for (const project of childProjects(null)) {
+      list.push({ type: "project", item: project, depth: 0 });
+    }
+    return list;
   }
 
   /** Folders in display order (depth-first), each with its nesting depth.
@@ -896,13 +949,13 @@
 
   function renderActiveTaskLabel() {
     const task = state.tasks.find((t) => t.id === state.activeTaskId);
-    const folder = folderOf(task);
+    const group = groupOf(task); // its project or folder
     el.activeTaskLabel.innerHTML = "";
-    if (task && folder) {
+    if (task && group) {
       const icon = document.createElement("span");
       icon.className = "ribbon-icon";
-      icon.innerHTML = iconSvg(folder.icon, 14);
-      icon.style.color = folder.color;
+      icon.innerHTML = iconSvg(group.icon, 14);
+      icon.style.color = group.color;
       el.activeTaskLabel.appendChild(icon);
     }
     el.activeTaskLabel.appendChild(
@@ -930,6 +983,131 @@
     return totals;
   }
 
+  /* ---------- Tags ---------- */
+
+  let tagFilter = null; // active tag filter (in-memory), or null
+
+  /** A stable colour per tag name (hashed into the folder palette). */
+  function tagColor(name) {
+    let h = 0;
+    for (let i = 0; i < name.length; i++) h = (h * 31 + name.charCodeAt(i)) >>> 0;
+    return FOLDER_COLORS[h % FOLDER_COLORS.length];
+  }
+
+  /** Distinct tags across all tasks, sorted. */
+  function allTags() {
+    const set = new Set();
+    for (const t of state.tasks) for (const tag of t.tags || []) set.add(tag);
+    return [...set].sort((a, b) => a.localeCompare(b));
+  }
+
+  /** A small coloured chip for a tag (a <span>, or a <button> when clickable). */
+  function tagChip(tag, asButton) {
+    const chip = document.createElement(asButton ? "button" : "span");
+    if (asButton) chip.type = "button";
+    chip.className = "task-tag";
+    chip.textContent = tag;
+    chip.dataset.tag = tag;
+    const c = tagColor(tag);
+    chip.style.color = c;
+    chip.style.background = c + "22"; // ~13% tint
+    chip.style.borderColor = c + "55";
+    return chip;
+  }
+
+  /** Show/hide the "Filtered by …" bar above the task list. */
+  function renderTagFilterBar() {
+    if (!el.tagFilterBar) return;
+    el.tagFilterBar.hidden = !tagFilter;
+    if (!tagFilter) return;
+    const label = $("#tag-filter-label");
+    label.textContent = tagFilter;
+    const c = tagColor(tagFilter);
+    label.style.color = c;
+    label.style.background = c + "22";
+    label.style.borderColor = c + "55";
+  }
+
+  function setTagFilter(tag) {
+    tagFilter = tag;
+    renderTasks();
+  }
+
+  /* ---------- Tag editor dialog ---------- */
+
+  let tagDialogTaskId = null;
+
+  function openTagDialog(taskId) {
+    tagDialogTaskId = taskId;
+    const task = state.tasks.find((t) => t.id === taskId);
+    if (!task) return;
+    $("#tag-task-name").textContent = task.name;
+    $("#tag-input").value = "";
+    renderTagDialog();
+    $("#tag-dialog").showModal();
+  }
+
+  function renderTagDialog() {
+    const task = state.tasks.find((t) => t.id === tagDialogTaskId);
+    if (!task) return;
+    const tags = task.tags || (task.tags = []);
+
+    const current = $("#tag-current");
+    current.innerHTML = "";
+    if (!tags.length) {
+      const note = document.createElement("span");
+      note.className = "tag-empty-note";
+      note.textContent = "No tags yet.";
+      current.appendChild(note);
+    }
+    for (const tag of tags) {
+      const chip = tagChip(tag, false);
+      chip.classList.add("removable");
+      const x = document.createElement("button");
+      x.type = "button";
+      x.className = "tag-remove";
+      x.textContent = "×";
+      x.setAttribute("aria-label", `Remove tag ${tag}`);
+      x.addEventListener("click", () => removeTag(task, tag));
+      chip.appendChild(x);
+      current.appendChild(chip);
+    }
+
+    // Existing tags elsewhere, offered as one-click adds.
+    const suggest = $("#tag-suggestions");
+    suggest.innerHTML = "";
+    const others = allTags().filter((t) => !tags.includes(t));
+    for (const tag of others) {
+      const chip = tagChip(tag, true);
+      chip.addEventListener("click", () => addTag(task, tag));
+      suggest.appendChild(chip);
+    }
+    $("#tag-suggestions-label").hidden = others.length === 0;
+  }
+
+  function addTag(task, tag) {
+    tag = String(tag).trim().replace(/\s+/g, " ");
+    if (!tag) return;
+    task.tags = task.tags || [];
+    if (!task.tags.some((t) => t.toLowerCase() === tag.toLowerCase())) {
+      task.tags.push(tag);
+    }
+    save();
+    renderTagDialog();
+    renderTasks();
+  }
+
+  function removeTag(task, tag) {
+    task.tags = (task.tags || []).filter((t) => t !== tag);
+    // If the removed tag was the active filter and nothing else has it, clear.
+    if (tagFilter === tag && !state.tasks.some((t) => (t.tags || []).includes(tag))) {
+      tagFilter = null;
+    }
+    save();
+    renderTagDialog();
+    renderTasks();
+  }
+
   function makeTaskItem(task, totals, inFolder, depth = 0) {
     const li = document.createElement("li");
     li.className =
@@ -952,15 +1130,26 @@
     name.className = "task-name";
     name.textContent = task.name;
 
+    // Tag chips (clickable to filter the list by that tag).
+    const tags = document.createElement("span");
+    tags.className = "task-tags";
+    for (const tag of task.tags || []) tags.appendChild(tagChip(tag, false));
+
     const time = document.createElement("span");
     time.className = "task-time";
     time.textContent = fmtDuration(totals.get(task.id) || 0);
 
+    const tagBtn = document.createElement("button");
+    tagBtn.className = "task-move task-tag-btn";
+    tagBtn.innerHTML = iconSvg("tag", 13);
+    tagBtn.title = "Edit tags";
+    tagBtn.setAttribute("aria-label", `Edit tags for ${task.name}`);
+
     const move = document.createElement("button");
     move.className = "task-move";
     move.textContent = "📂";
-    move.title = "Move to folder";
-    move.setAttribute("aria-label", `Move task ${task.name} to a folder`);
+    move.title = "Move to folder or project";
+    move.setAttribute("aria-label", `Move task ${task.name}`);
 
     const del = document.createElement("button");
     del.className = "task-delete";
@@ -968,17 +1157,24 @@
     del.title = "Delete task";
     del.setAttribute("aria-label", `Delete task ${task.name}`);
 
-    li.append(check, name, time, move, del);
+    li.append(check, name, tags, time, tagBtn, move, del);
     return li;
   }
 
-  function makeFolderHeader(folder, tasks, totals, depth = 0) {
+  // One renderer for both folder and project headers (a project is styled
+  // slightly differently via the .project-header class). `tasks` is used for
+  // the count/time meta.
+  function makeGroupHeader(type, item, tasks, totals, depth = 0) {
+    const isProject = type === "project";
     const li = document.createElement("li");
-    li.className = "folder-header" + (folder.collapsed ? " is-collapsed" : "");
-    li.dataset.folderId = folder.id;
-    // Nested folders sit further right than their parent. Uses margin (not
+    li.className =
+      "folder-header" +
+      (isProject ? " project-header" : "") +
+      (item.collapsed ? " is-collapsed" : "");
+    li.dataset[isProject ? "projectId" : "folderId"] = item.id;
+    // Nested groups sit further right than their parent. Uses margin (not
     // padding) so the header box shrinks in step with the task rows below it,
-    // keeping folders and their tasks the same width.
+    // keeping groups and their tasks the same width.
     if (depth > 0) li.style.marginLeft = depth * 16 + "px";
 
     const caret = document.createElement("span");
@@ -987,15 +1183,15 @@
 
     const icon = document.createElement("span");
     icon.className = "folder-icon";
-    icon.innerHTML = iconSvg(folder.icon, 14);
-    icon.style.background = folder.color + "26"; // ~15% alpha tint
-    icon.style.borderColor = folder.color;
-    icon.style.color = folder.color; // the SVG stroke uses currentColor
+    icon.innerHTML = iconSvg(item.icon, 14);
+    icon.style.background = item.color + "26"; // ~15% alpha tint
+    icon.style.borderColor = item.color;
+    icon.style.color = item.color; // the SVG stroke uses currentColor
 
     const name = document.createElement("span");
     name.className = "folder-name";
-    name.textContent = folder.name;
-    name.style.color = folder.color;
+    name.textContent = item.name;
+    name.style.color = item.color;
 
     const seconds = tasks.reduce((sum, t) => sum + (totals.get(t.id) || 0), 0);
     const meta = document.createElement("span");
@@ -1005,70 +1201,104 @@
     const edit = document.createElement("button");
     edit.className = "task-move folder-edit";
     edit.innerHTML = iconSvg("pen", 14); // SVG (not a glyph) so it renders in WKWebView
-    edit.title = "Edit folder (name, color, icon, parent)";
-    edit.setAttribute("aria-label", `Edit folder ${folder.name}`);
+    edit.title = `Edit ${type} (name, color, icon, ${isProject ? "folder" : "parent"})`;
+    edit.setAttribute("aria-label", `Edit ${type} ${item.name}`);
 
     const del = document.createElement("button");
     del.className = "task-delete folder-delete";
     del.textContent = "×";
-    del.title = "Delete folder (tasks are kept)";
-    del.setAttribute("aria-label", `Delete folder ${folder.name}`);
+    del.title = `Delete ${type} (tasks are kept)`;
+    del.setAttribute("aria-label", `Delete ${type} ${item.name}`);
 
     li.append(caret, icon, name, meta, edit, del);
     return li;
   }
 
-  /** Options for the "add task to folder" dropdown in the task form. */
-  function renderFolderSelect() {
+  /** Options for the "add task to…" dropdown in the task form. Values are
+      encoded "f:<id>" (folder), "p:<id>" (project) or "" (Inbox). */
+  function renderTaskTargetSelect() {
     const previous = el.taskFolderSelect.value;
     el.taskFolderSelect.innerHTML = "";
     const inbox = document.createElement("option");
     inbox.value = "";
     inbox.textContent = "Inbox";
     el.taskFolderSelect.appendChild(inbox);
-    for (const { folder, depth } of foldersInOrder()) {
+    for (const { type, item, depth } of groupsInOrder()) {
       const option = document.createElement("option");
-      option.value = folder.id;
-      // Non-breaking spaces indent nested folders in the dropdown.
-      option.textContent = "  ".repeat(depth) + folder.name;
+      option.value = (type === "project" ? "p:" : "f:") + item.id;
+      // Non-breaking spaces indent nested groups; projects get a ◆ marker.
+      option.textContent = "  ".repeat(depth) + (type === "project" ? "◆ " : "") + item.name;
       el.taskFolderSelect.appendChild(option);
     }
     // Keep the previous choice selected across re-renders when possible.
     if ([...el.taskFolderSelect.options].some((o) => o.value === previous)) {
       el.taskFolderSelect.value = previous;
     }
-    el.taskFolderSelect.style.display = state.folders.length ? "" : "none";
+    el.taskFolderSelect.style.display =
+      state.folders.length || state.projects.length ? "" : "none";
   }
 
   function renderTasks() {
     const totals = taskTotals();
     el.taskList.innerHTML = "";
     el.taskCount.textContent = String(state.tasks.length);
+    renderTagFilterBar();
+
+    // Tag-filter mode: a flat list of matching tasks (grouping is set aside).
+    if (tagFilter) {
+      const matches = state.tasks.filter((t) => (t.tags || []).includes(tagFilter));
+      el.taskEmpty.style.display = matches.length ? "none" : "block";
+      for (const task of matches) {
+        el.taskList.appendChild(makeTaskItem(task, totals, false));
+      }
+      renderTaskTargetSelect();
+      renderActiveTaskLabel();
+      return;
+    }
+
     el.taskEmpty.style.display =
-      state.tasks.length || state.folders.length ? "none" : "block";
+      state.tasks.length || state.folders.length || state.projects.length
+        ? "none"
+        : "block";
 
     const folderIds = new Set(state.folders.map((f) => f.id));
-    const loose = state.tasks.filter((t) => !folderIds.has(t.folderId));
+    const projectIds = new Set(state.projects.map((p) => p.id));
+    // Loose = not in a valid project and not directly in a valid folder.
+    const loose = state.tasks.filter(
+      (t) => !projectIds.has(t.projectId) && !folderIds.has(t.folderId)
+    );
+    const hasGroups = state.folders.length || state.projects.length;
 
-    // Depth-first walk: a folder shows its subfolders first, then its own
-    // tasks. A collapsed folder hides its whole subtree.
-    const renderFolder = (folder, depth) => {
-      const subtree = tasksInSubtree(folder.id); // count/time include nested
-      el.taskList.appendChild(makeFolderHeader(folder, subtree, totals, depth));
-      if (folder.collapsed) return;
-      for (const child of childFolders(folder.id)) {
-        renderFolder(child, depth + 1);
-      }
-      const tasks = state.tasks.filter((t) => t.folderId === folder.id);
+    // A project shows its own tasks. A collapsed project hides them.
+    const renderProject = (project, depth) => {
+      const tasks = tasksInProject(project.id);
+      el.taskList.appendChild(makeGroupHeader("project", project, tasks, totals, depth));
+      if (project.collapsed) return;
       for (const task of tasks) {
         el.taskList.appendChild(makeTaskItem(task, totals, true, depth));
       }
     };
-    for (const folder of childFolders(null)) {
-      renderFolder(folder, 0);
-    }
 
-    if (loose.length && state.folders.length) {
+    // Depth-first: a folder shows its subfolders, then its projects, then its
+    // own (project-less) tasks. A collapsed folder hides its whole subtree.
+    const renderFolder = (folder, depth) => {
+      const subtree = tasksInSubtree(folder.id); // count/time include nested
+      el.taskList.appendChild(makeGroupHeader("folder", folder, subtree, totals, depth));
+      if (folder.collapsed) return;
+      for (const child of childFolders(folder.id)) renderFolder(child, depth + 1);
+      for (const project of childProjects(folder.id)) renderProject(project, depth + 1);
+      const direct = state.tasks.filter(
+        (t) => !projectIds.has(t.projectId) && t.folderId === folder.id
+      );
+      for (const task of direct) {
+        el.taskList.appendChild(makeTaskItem(task, totals, true, depth));
+      }
+    };
+
+    for (const folder of childFolders(null)) renderFolder(folder, 0);
+    for (const project of childProjects(null)) renderProject(project, 0);
+
+    if (loose.length && hasGroups) {
       const label = document.createElement("li");
       label.className = "inbox-label";
       label.textContent = "📥 Inbox";
@@ -1078,18 +1308,24 @@
       el.taskList.appendChild(makeTaskItem(task, totals, false));
     }
 
-    renderFolderSelect();
+    renderTaskTargetSelect();
     renderActiveTaskLabel();
   }
 
-  function addTask(name, folderId) {
+  // target is the encoded task-form value: "f:<id>", "p:<id>" or "" (Inbox).
+  function addTask(name, target) {
     const trimmed = name.trim();
     if (!trimmed) return;
+    let folderId = null;
+    let projectId = null;
+    if (target && target.startsWith("p:")) projectId = target.slice(2);
+    else if (target && target.startsWith("f:")) folderId = target.slice(2);
     const task = {
       id: uid(),
       name: trimmed,
       done: false,
-      folderId: folderId || null,
+      folderId,
+      projectId,
       createdAt: Date.now(),
     };
     state.tasks.push(task);
@@ -1100,17 +1336,21 @@
   }
 
   function handleTaskListClick(event) {
-    // Folder rows: toggle collapse, or delete the folder (keeping its tasks).
+    // Group rows (folders + projects): toggle collapse, edit, or delete.
     const header = event.target.closest(".folder-header");
     if (header) {
-      const folder = state.folders.find((f) => f.id === header.dataset.folderId);
-      if (!folder) return;
+      const isProject = Boolean(header.dataset.projectId);
+      const group = isProject
+        ? state.projects.find((p) => p.id === header.dataset.projectId)
+        : state.folders.find((f) => f.id === header.dataset.folderId);
+      if (!group) return;
       if (event.target.closest(".folder-edit")) {
-        openFolderDialog(folder); // edit name / color / icon / parent
+        openGroupDialog(isProject ? "project" : "folder", group);
       } else if (event.target.closest(".folder-delete")) {
-        confirmFolderDelete(folder); // deletion happens only after confirmation
+        if (isProject) confirmProjectDelete(group);
+        else confirmFolderDelete(group);
       } else {
-        folder.collapsed = !folder.collapsed;
+        group.collapsed = !group.collapsed;
         save();
         renderTasks();
       }
@@ -1122,6 +1362,17 @@
     const task = state.tasks.find((t) => t.id === li.dataset.id);
     if (!task) return;
 
+    // Clicking a tag chip filters the list to that tag.
+    const chip = event.target.closest(".task-tag");
+    if (chip) {
+      setTagFilter(chip.dataset.tag);
+      return;
+    }
+    // The tag button shares .task-move, so check it first.
+    if (event.target.closest(".task-tag-btn")) {
+      openTagDialog(task.id);
+      return;
+    }
     if (event.target.closest(".task-move")) {
       openMoveDialog(task.id);
       return;
@@ -1144,8 +1395,10 @@
 
   let pickedColor = FOLDER_COLORS[0];
   let pickedIcon = FOLDER_ICONS[0];
-  // null while creating a new folder; a folder id while editing one.
-  let editingFolderId = null;
+  // The dialog is shared by folders and projects.
+  let groupDialogType = "folder"; // 'folder' | 'project'
+  // null while creating; the folder/project id while editing one.
+  let editingGroupId = null;
 
   function renderPickers() {
     el.colorPicker.innerHTML = "";
@@ -1177,15 +1430,17 @@
     }
   }
 
-  /** Fill the parent-folder dropdown. When editing, `folder` is excluded
-      (along with its descendants) so it can't be nested inside itself. */
-  function renderFolderParentOptions(folder) {
+  /** Fill the parent dropdown. For a folder being edited, that folder and its
+      descendants are excluded so it can't be nested inside itself. Projects
+      can go under any folder (or none). */
+  function renderGroupParentOptions(type, item) {
     el.folderParent.innerHTML = "";
     const top = document.createElement("option");
     top.value = "";
     top.textContent = "None (top level)";
     el.folderParent.appendChild(top);
-    for (const { folder: f, depth } of foldersInOrder(folder ? folder.id : null)) {
+    const exclude = type === "folder" && item ? item.id : null;
+    for (const { folder: f, depth } of foldersInOrder(exclude)) {
       const option = document.createElement("option");
       option.value = f.id;
       option.textContent = "  ".repeat(depth) + f.name;
@@ -1193,16 +1448,27 @@
     }
   }
 
-  /** Open the dialog to create a new folder, or edit `folder` when given. */
-  function openFolderDialog(folder) {
-    editingFolderId = folder ? folder.id : null;
-    el.folderName.value = folder ? folder.name : "";
-    pickedColor = folder ? folder.color : FOLDER_COLORS[0];
-    pickedIcon = folder ? folder.icon : FOLDER_ICONS[0];
-    renderFolderParentOptions(folder);
-    el.folderParent.value = folder ? folder.parentId || "" : "";
-    el.folderTitle.textContent = folder ? "Edit Folder" : "New Folder";
-    el.folderSubmit.textContent = folder ? "Save" : "Create";
+  // Default icon for a brand-new group (distinct so projects don't look like
+  // folders at a glance).
+  const DEFAULT_ICON = { folder: "folder", project: "target" };
+
+  /** Open the shared dialog to create or edit a folder/project.
+      type: 'folder' | 'project'. item: the record when editing, else undefined. */
+  function openGroupDialog(type, item) {
+    groupDialogType = type;
+    editingGroupId = item ? item.id : null;
+    const label = type === "project" ? "Project" : "Folder";
+    el.folderName.value = item ? item.name : "";
+    pickedColor = item ? item.color : FOLDER_COLORS[0];
+    pickedIcon = item ? item.icon : DEFAULT_ICON[type];
+    renderGroupParentOptions(type, item);
+    // A project stores its folder in folderId; a folder its parent in parentId.
+    const parent = item ? (type === "project" ? item.folderId : item.parentId) : "";
+    el.folderParent.value = parent || "";
+    el.folderParentLabel.textContent =
+      type === "project" ? "Folder" : "Parent folder";
+    el.folderTitle.textContent = (item ? "Edit " : "New ") + label;
+    el.folderSubmit.textContent = item ? "Save" : "Create";
     renderPickers();
     el.folderDialog.showModal();
   }
@@ -1227,14 +1493,16 @@
     const dest = parentName ? `“${parentName}”` : "the Inbox";
     const count = state.tasks.filter((t) => t.folderId === folder.id).length;
     const subCount = childFolders(folder.id).length;
+    const projCount = childProjects(folder.id).length;
     const parts = [];
     if (count) parts.push(`${count} task${count === 1 ? "" : "s"}`);
+    if (projCount) parts.push(`${projCount} project${projCount === 1 ? "" : "s"}`);
     if (subCount) parts.push(`${subCount} subfolder${subCount === 1 ? "" : "s"}`);
     openConfirm(
       `Delete “${folder.name}”?`,
       parts.length === 0
         ? "This folder is empty."
-        : `Its ${parts.join(" and ")} will move to ${dest} — tracked time and history are kept.`,
+        : `Its ${parts.join(", ")} will move to ${dest} — tracked time and history are kept.`,
       "Delete",
       () => {
         for (const t of state.tasks) {
@@ -1243,10 +1511,39 @@
         for (const f of state.folders) {
           if ((f.parentId || null) === folder.id) f.parentId = newParent;
         }
+        for (const p of state.projects) {
+          if ((p.folderId || null) === folder.id) p.folderId = newParent;
+        }
         state.folders = state.folders.filter((f) => f.id !== folder.id);
         save();
         renderTasks();
         showToast(`Folder “${folder.name}” deleted`);
+      }
+    );
+  }
+
+  function confirmProjectDelete(project) {
+    const dest = project.folderId
+      ? `“${(state.folders.find((f) => f.id === project.folderId) || {}).name}”`
+      : "the Inbox";
+    const count = tasksInProject(project.id).length;
+    openConfirm(
+      `Delete “${project.name}”?`,
+      count === 0
+        ? "This project is empty."
+        : `Its ${count} task${count === 1 ? "" : "s"} will move to ${dest} — tracked time and history are kept.`,
+      "Delete",
+      () => {
+        for (const t of state.tasks) {
+          if (t.projectId === project.id) {
+            t.projectId = null;
+            t.folderId = project.folderId || null; // fall back to the folder
+          }
+        }
+        state.projects = state.projects.filter((p) => p.id !== project.id);
+        save();
+        renderTasks();
+        showToast(`Project “${project.name}” deleted`);
       }
     );
   }
@@ -1279,26 +1576,35 @@
     options.innerHTML = "";
 
     const choices = [
-      { id: null, icon: "inbox", name: "Inbox", color: "", depth: 0 },
-      ...foldersInOrder().map(({ folder, depth }) => ({ ...folder, depth })),
+      { kind: "inbox", id: null, icon: "inbox", name: "Inbox", color: "", depth: 0 },
+      ...groupsInOrder().map(({ type, item, depth }) => ({
+        kind: type,
+        id: item.id,
+        icon: item.icon,
+        name: item.name,
+        color: item.color,
+        depth,
+      })),
     ];
+    const currentKind = task.projectId ? "project" : task.folderId ? "folder" : "inbox";
+    const currentId = task.projectId || task.folderId || null;
     for (const choice of choices) {
       const btn = document.createElement("button");
       btn.type = "button";
-      btn.className =
-        "move-option" +
-        ((task.folderId || null) === choice.id ? " is-current" : "");
+      const isCurrent = choice.kind === currentKind && choice.id === currentId;
+      btn.className = "move-option" + (isCurrent ? " is-current" : "");
       if (choice.depth) btn.style.marginLeft = choice.depth * 16 + "px";
       const iconWrap = document.createElement("span");
       iconWrap.className = "move-option-icon";
       iconWrap.innerHTML = iconSvg(choice.icon, 15);
       if (choice.color) iconWrap.style.color = choice.color;
       const label = document.createElement("span");
-      label.textContent = choice.name;
+      label.textContent = (choice.kind === "project" ? "◆ " : "") + choice.name;
       btn.append(iconWrap, label);
       if (choice.color) btn.style.borderLeftColor = choice.color;
       btn.addEventListener("click", () => {
-        task.folderId = choice.id;
+        task.projectId = choice.kind === "project" ? choice.id : null;
+        task.folderId = choice.kind === "folder" ? choice.id : null;
         save();
         renderTasks();
         $("#move-dialog").close();
@@ -1308,30 +1614,33 @@
     $("#move-dialog").showModal();
   }
 
-  function submitFolder() {
+  function submitGroup() {
     const name = el.folderName.value.trim();
     if (!name) return;
     const parentId = el.folderParent.value || null;
-    if (editingFolderId) {
-      const folder = state.folders.find((f) => f.id === editingFolderId);
-      if (folder) {
-        folder.name = name;
-        folder.color = pickedColor;
-        folder.icon = pickedIcon;
-        folder.parentId = parentId;
+    const isProject = groupDialogType === "project";
+    const list = isProject ? state.projects : state.folders;
+    if (editingGroupId) {
+      const item = list.find((x) => x.id === editingGroupId);
+      if (item) {
+        item.name = name;
+        item.color = pickedColor;
+        item.icon = pickedIcon;
+        if (isProject) item.folderId = parentId;
+        else item.parentId = parentId;
       }
     } else {
-      state.folders.push({
+      const base = {
         id: uid(),
         name,
         color: pickedColor,
         icon: pickedIcon,
-        parentId,
         collapsed: false,
         createdAt: Date.now(),
-      });
+      };
+      list.push(isProject ? { ...base, folderId: parentId } : { ...base, parentId });
     }
-    editingFolderId = null;
+    editingGroupId = null;
     save();
     renderTasks();
   }
@@ -1578,7 +1887,7 @@
           taskId: s.taskId ?? null,
           name: task ? task.name : s.taskId ? "Deleted task" : "No task",
           deleted: !task,
-          folder: folderOf(task),
+          folder: groupOf(task), // its project or folder (for the report chip)
           sessions: 0,
           seconds: 0,
           last: 0,
@@ -1776,7 +2085,10 @@
     );
   }
 
-  function openSettings() {
+  // Settings is a full view (like Timer / Reports), not a modal — a modal
+  // dialog widened the page on iOS. switchView("settings") calls this to
+  // populate the form from the current settings each time it opens.
+  function renderSettings() {
     $("#set-focus").value = state.settings.focus;
     $("#set-short").value = state.settings.shortBreak;
     $("#set-long").value = state.settings.longBreak;
@@ -1789,7 +2101,6 @@
     updateAutostopRow();
     $("#set-match").checked = state.settings.matchNoise;
     $("#set-flip").checked = state.settings.flipFocus;
-    el.dialog.showModal();
   }
 
   function saveSettings() {
@@ -1818,6 +2129,8 @@
     applyLayout();
     // Restart the current mode so the new duration takes effect immediately.
     setMode(timer.mode);
+    switchView("timer"); // return to the timer after saving (as the modal did)
+    showToast("Settings saved");
   }
 
   /* ---------- Layout mode (Auto / Mobile / Desktop) ----------
@@ -2057,6 +2370,7 @@
           JSON.stringify({
             settings: { ...DEFAULT_SETTINGS, ...(data.settings || {}) },
             folders: Array.isArray(data.folders) ? data.folders : [],
+            projects: Array.isArray(data.projects) ? data.projects : [],
             tasks: data.tasks,
             sessions: data.sessions,
             activeTaskId: data.activeTaskId ?? null,
@@ -2351,6 +2665,7 @@
           JSON.stringify({
             settings: { ...DEFAULT_SETTINGS, ...(remote.settings || {}) },
             folders: Array.isArray(remote.folders) ? remote.folders : [],
+            projects: Array.isArray(remote.projects) ? remote.projects : [],
             tasks: Array.isArray(remote.tasks) ? remote.tasks : [],
             sessions: Array.isArray(remote.sessions) ? remote.sessions : [],
             activeTaskId: remote.activeTaskId ?? null,
@@ -2411,6 +2726,7 @@
       section.classList.toggle("is-active", section.id === `view-${view}`);
     });
     if (view === "reports") renderReports();
+    if (view === "settings") renderSettings();
   }
 
   let toastTimeout = null;
@@ -2443,13 +2759,24 @@
     });
     el.taskList.addEventListener("click", handleTaskListClick);
 
-    $("#new-folder-btn").addEventListener("click", () => openFolderDialog());
+    $("#new-folder-btn").addEventListener("click", () => openGroupDialog("folder"));
+    $("#new-project-btn").addEventListener("click", () => openGroupDialog("project"));
     $("#folder-cancel").addEventListener("click", () => {
-      editingFolderId = null;
+      editingGroupId = null;
       el.folderDialog.close();
     });
-    $("#folder-form").addEventListener("submit", submitFolder);
+    $("#folder-form").addEventListener("submit", submitGroup);
     $("#move-cancel").addEventListener("click", () => $("#move-dialog").close());
+
+    // Tags: editor dialog + filter bar.
+    $("#tag-close").addEventListener("click", () => $("#tag-dialog").close());
+    $("#tag-form").addEventListener("submit", (event) => {
+      event.preventDefault();
+      const task = state.tasks.find((t) => t.id === tagDialogTaskId);
+      if (task) addTag(task, $("#tag-input").value);
+      $("#tag-input").value = "";
+    });
+    $("#tag-filter-clear").addEventListener("click", () => setTagFilter(null));
 
     $("#confirm-cancel").addEventListener("click", () => {
       confirmCallback = null;
@@ -2539,9 +2866,13 @@
       }
     });
 
-    $("#settings-btn").addEventListener("click", openSettings);
-    $("#settings-cancel").addEventListener("click", () => el.dialog.close());
-    $("#settings-form").addEventListener("submit", saveSettings);
+    // Settings is a view now; the nav button switches to it via the shared
+    // .view-btn handler above. Cancel just returns to the timer.
+    $("#settings-cancel").addEventListener("click", () => switchView("timer"));
+    $("#settings-form").addEventListener("submit", (event) => {
+      event.preventDefault();
+      saveSettings();
+    });
 
     // Esc leaves the full-window timer; Space toggles the timer unless
     // the user is typing or a dialog is open.
