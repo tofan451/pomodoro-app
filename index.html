@@ -543,5 +543,14 @@
   <!-- Toast notifications -->
   <div id="toast" class="toast" role="status" aria-live="polite"></div>
 
+  <!-- Flip-mode countdown: centred card (no pointer/arrow), shown while the
+       phone is picked up before the session pauses. -->
+  <div id="flip-overlay" class="flip-overlay" role="alertdialog" aria-live="assertive" hidden>
+    <div class="flip-overlay-card">
+      <span id="flip-count" class="flip-count">5</span>
+      <p class="flip-overlay-text">Pausing soon — place the phone face-down to keep focusing</p>
+    </div>
+  </div>
+
 </body>
 </html>

@@ -571,10 +571,44 @@
     return noiseAudio;
   }
 
+  // Near-silent looped WAV, built once. Playing it through the shared audio
+  // element keeps iOS from suspending the page on the lock screen when no
+  // soundscape is chosen — the timer keeps ticking, the completion chime
+  // fires on time, and the lock screen's Now Playing card keeps showing the
+  // live countdown (the closest a web app gets to a lock-screen clock).
+  let keepAliveURI = null;
+
+  function silentWavDataURI() {
+    if (keepAliveURI) return keepAliveURI;
+    const rate = 8000;
+    const n = rate * 2; // 2 s of 8-bit silence
+    const bytes = new Uint8Array(44 + n);
+    const str = (o, s) => { for (let i = 0; i < s.length; i++) bytes[o + i] = s.charCodeAt(i); };
+    const u32 = (o, v) => { bytes[o] = v & 255; bytes[o + 1] = (v >> 8) & 255; bytes[o + 2] = (v >> 16) & 255; bytes[o + 3] = (v >> 24) & 255; };
+    const u16 = (o, v) => { bytes[o] = v & 255; bytes[o + 1] = (v >> 8) & 255; };
+    str(0, "RIFF"); u32(4, 36 + n); str(8, "WAVE");
+    str(12, "fmt "); u32(16, 16); u16(20, 1); u16(22, 1);
+    u32(24, rate); u32(28, rate); u16(32, 1); u16(34, 8);
+    str(36, "data"); u32(40, n);
+    bytes.fill(128, 44); // 8-bit PCM midpoint = silence
+    let bin = "";
+    for (const b of bytes) bin += String.fromCharCode(b);
+    keepAliveURI = "data:audio/wav;base64," + btoa(bin);
+    return keepAliveURI;
+  }
+
   function startNoise() {
     const type = state.settings.noise;
-    if (type === "off" || timer.mode !== "focus") return;
+    if (timer.mode !== "focus") return;
     stopNoise();
+    if (type === "off") {
+      // No soundscape: play the silent keep-alive loop instead.
+      const audio = ensureNoiseAudio();
+      if (audio.currentSrc !== silentWavDataURI()) audio.src = silentWavDataURI();
+      audio.volume = 0.01;
+      audio.play().catch(() => { /* desktop autoplay rules — harmless */ });
+      return;
+    }
     const file = NOISE_FILES[type];
     if (!file) {
       startSynthNoise(type);
@@ -836,6 +870,14 @@
         ],
       });
       navigator.mediaSession.playbackState = timer.running ? "playing" : "paused";
+      // Progress bar on the lock-screen card: elapsed / total session time.
+      if (typeof navigator.mediaSession.setPositionState === "function") {
+        navigator.mediaSession.setPositionState({
+          duration: timer.total,
+          position: Math.min(timer.total, timer.total - timer.remaining),
+          playbackRate: 1,
+        });
+      }
     } catch (err) {
       /* MediaMetadata not supported — the OS shows its default card */
     }
@@ -2458,6 +2500,9 @@
     off.addEventListener("click", () => {
       state.settings.noise = "off";
       stopNoise();
+      // Mid-session, fall back to the silent keep-alive so the lock-screen
+      // countdown and background timing survive without a soundscape.
+      if (timer.running && timer.mode === "focus") startNoise();
       save();
       openSoundDialog();
     });
@@ -2584,15 +2629,16 @@
     if (flipCountdownId === null) return;
     clearInterval(flipCountdownId);
     flipCountdownId = null;
+    $("#flip-overlay").hidden = true;
     if (announce) showToast("📱 Face down again — focus continues");
   }
 
   function startFlipCountdown() {
     if (flipCountdownId !== null) return; // already counting down
     flipCountdownLeft = FLIP_PAUSE_SECONDS;
-    const message = () =>
-      `📱 Picked up — pausing in ${flipCountdownLeft}s (place face-down to keep going)`;
-    showToast(message());
+    // A centred card (no toast) shows the remaining seconds prominently.
+    $("#flip-count").textContent = String(flipCountdownLeft);
+    $("#flip-overlay").hidden = false;
     flipCountdownId = setInterval(() => {
       // Paused or ended some other way — the countdown is moot.
       if (!timer.running || timer.mode !== "focus") {
@@ -2606,7 +2652,7 @@
         showToast("📱 Focus paused — place face-down to resume");
         return;
       }
-      showToast(message());
+      $("#flip-count").textContent = String(flipCountdownLeft);
     }, 1000);
   }
 

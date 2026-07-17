@@ -1240,6 +1240,49 @@ kbd {
   user-select: none;
 }
 
+/* Flip-mode countdown: a plain centred card — deliberately no pointer,
+   arrow or triangle — over a dimmed backdrop. */
+.flip-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 60; /* above the toast */
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background: rgba(5, 8, 12, 0.6);
+  backdrop-filter: blur(3px);
+  -webkit-backdrop-filter: blur(3px);
+}
+
+.flip-overlay-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  max-width: 300px;
+  padding: 26px 30px;
+  border-radius: 18px;
+  background: var(--surface);
+  border: 1px solid var(--accent);
+  box-shadow: 0 24px 70px rgba(0, 0, 0, 0.55);
+  text-align: center;
+}
+
+.flip-count {
+  font-size: 3rem;
+  font-weight: 700;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+  color: var(--accent);
+}
+
+.flip-overlay-text {
+  font-size: 0.9rem;
+  line-height: 1.45;
+  color: var(--text);
+}
+
 /* Goal calendar (Reports): a ring per day, filled by sessions ÷ goal */
 .cal-nav {
   display: flex;
