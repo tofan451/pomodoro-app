@@ -1010,6 +1010,10 @@
 
   let tagFilter = null; // active tag filter (in-memory), or null
   let archiveOpen = false; // whether the Archive section is expanded
+  // Task rows show at most a couple of tag chips; a "+N" chip expands the
+  // rest onto their own line. This tracks which tasks are expanded.
+  const expandedTags = new Set();
+  const MAX_VISIBLE_TAGS = 2;
 
   /** A stable colour per tag name (hashed into the folder palette). */
   function tagColor(name) {
@@ -1162,10 +1166,25 @@
       check.style.borderColor = group.color;
     }
 
-    // Tag chips (clickable to filter the list by that tag).
+    // Tag chips (clickable to filter the list by that tag). Only a couple
+    // are shown inline; "+N" expands the rest onto their own line so long
+    // tag lists can never widen the row past the screen.
+    const taskTags = task.tags || [];
+    const tagsOpen = expandedTags.has(task.id);
+    if (tagsOpen) li.classList.add("tags-open");
     const tags = document.createElement("span");
     tags.className = "task-tags";
-    for (const tag of task.tags || []) tags.appendChild(tagChip(tag, false));
+    const visible = tagsOpen ? taskTags : taskTags.slice(0, MAX_VISIBLE_TAGS);
+    for (const tag of visible) tags.appendChild(tagChip(tag, false));
+    if (taskTags.length > MAX_VISIBLE_TAGS) {
+      const more = document.createElement("button");
+      more.type = "button";
+      more.className = "task-tag task-tag-more";
+      more.textContent = tagsOpen ? "‹ less" : `+${taskTags.length - MAX_VISIBLE_TAGS}`;
+      more.title = tagsOpen ? "Show fewer tags" : "Show all tags";
+      more.setAttribute("aria-label", more.title);
+      tags.appendChild(more);
+    }
 
     const time = document.createElement("span");
     time.className = "task-time";
@@ -1421,6 +1440,14 @@
     const task = state.tasks.find((t) => t.id === li.dataset.id);
     if (!task) return;
 
+    // "+N" / "less": expand or collapse the row's tag list (checked before
+    // the filter handler — the toggle chip shares the .task-tag class).
+    if (event.target.closest(".task-tag-more")) {
+      if (expandedTags.has(task.id)) expandedTags.delete(task.id);
+      else expandedTags.add(task.id);
+      renderTasks();
+      return;
+    }
     // Clicking a tag chip filters the list to that tag.
     const chip = event.target.closest(".task-tag");
     if (chip) {

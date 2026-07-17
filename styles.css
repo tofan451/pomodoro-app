@@ -63,6 +63,15 @@ body[data-mode="long"] {
   display: none !important;
 }
 
+/* The page must never grow wider than the device — overflowing content
+   (e.g. many tag chips) gets clipped instead of widening the layout
+   viewport, which on iPhone zoomed the whole UI out like a web page. */
+html,
+body {
+  max-width: 100%;
+  overflow-x: hidden;
+}
+
 html {
   color-scheme: dark;
 }
@@ -223,6 +232,9 @@ kbd {
   border: 1px solid var(--border);
   border-radius: var(--radius);
   box-shadow: var(--shadow);
+  /* As a grid/flex item a card must shrink to its track, not inflate to its
+     content's min width (long task names / tag rows on phones). */
+  min-width: 0;
 }
 
 .card-header {
@@ -496,6 +508,14 @@ kbd {
   overflow-y: auto;
 }
 
+/* Rows may never exceed the list: as flex items their min-width:auto would
+   otherwise inflate them to their content width (long names/tags), pushing
+   the buttons off-screen on phones. */
+.task-list > li {
+  min-width: 0;
+  max-width: 100%;
+}
+
 .task-item {
   display: flex;
   align-items: center;
@@ -573,6 +593,50 @@ kbd {
   flex-shrink: 1;
   min-width: 0;
   overflow: hidden;
+}
+
+/* Chips inside task rows stay compact so 2 + the "+N" always fit. */
+.task-item .task-tag {
+  max-width: 90px;
+}
+
+/* The "+N" / "less" toggle chip (neutral colours, set in CSS not inline). */
+.task-tag-more {
+  flex-shrink: 0;
+  color: var(--muted);
+  background: var(--surface);
+  border-color: var(--border);
+}
+
+.task-tag-more:hover {
+  color: var(--text);
+}
+
+/* Expanded: the chips drop onto their own full-width line(s) under the
+   task name, wrapping as needed — the row grows down, never sideways. */
+.task-item.tags-open {
+  flex-wrap: wrap;
+}
+
+.task-item.tags-open .task-tags {
+  order: 10;
+  flex-basis: 100%;
+  flex-wrap: wrap;
+  overflow: visible;
+  margin-top: 6px;
+}
+
+/* Tagged rows: chips always get their own line under the task name (on
+   every layout) — inline they'd compete with the name (flex-basis 0) and
+   squeeze it to nothing whenever the chips are long. */
+.task-item {
+  flex-wrap: wrap;
+}
+
+.task-item .task-tags:not(:empty) {
+  order: 10;
+  flex-basis: 100%;
+  margin-top: 6px;
 }
 
 .task-tag {
@@ -870,6 +934,10 @@ kbd {
   color: var(--text);
   padding: 28px;
   width: min(92vw, 440px);
+  /* Hard cap: a dialog may never be wider than the phone screen. */
+  max-width: calc(100vw - 20px);
+  box-sizing: border-box;
+  overflow-x: hidden;
   box-shadow: 0 24px 70px rgba(0, 0, 0, 0.55);
 }
 
