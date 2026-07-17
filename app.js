@@ -51,6 +51,9 @@
     // When on, ticking a task done moves it to the Archive section at the
     // bottom of the list instead of leaving it in place.
     archiveDone: false,
+    // Completed focus sessions per day that count as "goal reached" on the
+    // Reports calendar.
+    dailyGoal: 5,
   };
 
   // Presets offered in the "New Folder" dialog.
@@ -1781,10 +1784,84 @@
     $("#stat-week").textContent = fmtDuration(weekSec);
     $("#stat-sessions").textContent = String(completedCount);
     $("#stat-total").textContent = fmtDuration(totalSec);
+    // Done tasks, wherever they live (list or Archive).
+    $("#stat-done").textContent = String(state.tasks.filter((t) => t.done).length);
 
     renderRecords();
     renderWeekChart(now);
+    renderGoalCalendar();
     renderCustomReport();
+  }
+
+  /* ---------- Goal calendar ----------
+     One ring per day of the shown month; each ring fills with that day's
+     completed focus sessions relative to the daily goal (Settings). */
+
+  let calOffset = 0; // months relative to the current month
+
+  function renderGoalCalendar() {
+    const goal = Math.max(1, state.settings.dailyGoal || 1);
+    const now = new Date();
+    const shown = new Date(now.getFullYear(), now.getMonth() + calOffset, 1);
+    $("#cal-title").textContent = shown.toLocaleDateString(undefined, {
+      month: "long",
+      year: "numeric",
+    });
+
+    // Completed sessions per calendar day, for quick lookup.
+    const perDay = new Map();
+    for (const s of state.sessions) {
+      if (!s.completed) continue;
+      const key = dayKey(s.endedAt);
+      perDay.set(key, (perDay.get(key) || 0) + 1);
+    }
+
+    const grid = $("#goal-calendar");
+    grid.innerHTML = "";
+
+    // Weekday header, Monday-first (matching startOfWeek).
+    const monday = new Date(startOfWeek(now.getTime()));
+    for (let i = 0; i < 7; i++) {
+      const d = new Date(monday);
+      d.setDate(monday.getDate() + i);
+      const wd = document.createElement("span");
+      wd.className = "cal-weekday";
+      wd.textContent = d.toLocaleDateString(undefined, { weekday: "narrow" });
+      grid.appendChild(wd);
+    }
+
+    // Blank cells before the 1st.
+    const lead = (shown.getDay() + 6) % 7; // Mon=0 … Sun=6
+    for (let i = 0; i < lead; i++) grid.appendChild(document.createElement("span"));
+
+    const daysInMonth = new Date(shown.getFullYear(), shown.getMonth() + 1, 0).getDate();
+    const todayKey = dayKey(now.getTime());
+    const R = 12;
+    const C = 2 * Math.PI * R;
+    for (let day = 1; day <= daysInMonth; day++) {
+      const date = new Date(shown.getFullYear(), shown.getMonth(), day);
+      const key = dayKey(date.getTime());
+      const count = perDay.get(key) || 0;
+      const fraction = Math.min(1, count / goal);
+
+      const cell = document.createElement("div");
+      cell.className =
+        "cal-day" +
+        (key === todayKey ? " is-today" : "") +
+        (fraction >= 1 ? " is-complete" : "");
+      cell.title = `${count} of ${goal} session${goal === 1 ? "" : "s"}`;
+      cell.innerHTML =
+        `<svg viewBox="0 0 30 30" class="cal-ring" aria-hidden="true">` +
+        `<circle cx="15" cy="15" r="${R}" class="cal-ring-track"/>` +
+        (fraction > 0
+          ? `<circle cx="15" cy="15" r="${R}" class="cal-ring-fill" ` +
+            `stroke-dasharray="${C.toFixed(2)}" ` +
+            `stroke-dashoffset="${(C * (1 - fraction)).toFixed(2)}" ` +
+            `transform="rotate(-90 15 15)"/>`
+          : "") +
+        `</svg><span class="cal-daynum">${day}</span>`;
+      grid.appendChild(cell);
+    }
   }
 
   /* Win Day / Win Week / Win Month — the periods with the most focus time
@@ -2188,6 +2265,7 @@
     $("#set-short").value = state.settings.shortBreak;
     $("#set-long").value = state.settings.longBreak;
     $("#set-every").value = state.settings.longEvery;
+    $("#set-goal").value = state.settings.dailyGoal;
     $("#set-sound").checked = state.settings.sound;
     setSeg("set-theme", state.settings.theme);
     setSeg("set-layout", state.settings.layout);
@@ -2209,6 +2287,7 @@
     s.shortBreak = clamp($("#set-short").value, 1, 60, s.shortBreak);
     s.longBreak = clamp($("#set-long").value, 1, 60, s.longBreak);
     s.longEvery = clamp($("#set-every").value, 2, 12, s.longEvery);
+    s.dailyGoal = clamp($("#set-goal").value, 1, 24, s.dailyGoal);
     s.sound = $("#set-sound").checked;
     s.theme = segValue("set-theme") || s.theme;
     s.layout = segValue("set-layout") || s.layout;
@@ -2495,6 +2574,42 @@
   let flipState = "unknown"; // 'down' | 'up' | 'unknown'
   let flipTimer = null;
 
+  /* Picking the phone up no longer pauses instantly — a short countdown
+     warns first, and placing the phone back face-down cancels it. */
+  const FLIP_PAUSE_SECONDS = 5;
+  let flipCountdownId = null;
+  let flipCountdownLeft = 0;
+
+  function cancelFlipCountdown(announce) {
+    if (flipCountdownId === null) return;
+    clearInterval(flipCountdownId);
+    flipCountdownId = null;
+    if (announce) showToast("📱 Face down again — focus continues");
+  }
+
+  function startFlipCountdown() {
+    if (flipCountdownId !== null) return; // already counting down
+    flipCountdownLeft = FLIP_PAUSE_SECONDS;
+    const message = () =>
+      `📱 Picked up — pausing in ${flipCountdownLeft}s (place face-down to keep going)`;
+    showToast(message());
+    flipCountdownId = setInterval(() => {
+      // Paused or ended some other way — the countdown is moot.
+      if (!timer.running || timer.mode !== "focus") {
+        cancelFlipCountdown(false);
+        return;
+      }
+      flipCountdownLeft -= 1;
+      if (flipCountdownLeft <= 0) {
+        cancelFlipCountdown(false);
+        pauseTimer();
+        showToast("📱 Focus paused — place face-down to resume");
+        return;
+      }
+      showToast(message());
+    }, 1000);
+  }
+
   function handleMotion(event) {
     const gravity = event.accelerationIncludingGravity;
     if (!gravity || typeof gravity.z !== "number") return;
@@ -2506,17 +2621,15 @@
     clearTimeout(flipTimer);
     flipTimer = setTimeout(() => {
       if (!state.settings.flipFocus) return;
-      if (
-        flipState === "down" &&
-        !timer.running &&
-        timer.mode === "focus" &&
-        timer.remaining > 0
-      ) {
-        startTimer();
-        showToast("📱 Face down — focus running");
+      if (flipState === "down" && timer.mode === "focus") {
+        // Placed back down during the warning — keep the session running.
+        cancelFlipCountdown(true);
+        if (!timer.running && timer.remaining > 0) {
+          startTimer();
+          showToast("📱 Face down — focus running");
+        }
       } else if (flipState === "up" && timer.running && timer.mode === "focus") {
-        pauseTimer();
-        showToast("📱 Picked up — focus paused");
+        startFlipCountdown();
       }
     }, 650);
   }
@@ -2956,6 +3069,16 @@
     });
     $("#report-start").addEventListener("change", renderCustomReport);
     $("#report-end").addEventListener("change", renderCustomReport);
+
+    // Goal calendar month navigation.
+    $("#cal-prev").addEventListener("click", () => {
+      calOffset -= 1;
+      renderGoalCalendar();
+    });
+    $("#cal-next").addEventListener("click", () => {
+      calOffset += 1;
+      renderGoalCalendar();
+    });
 
     $("#edit-report-cancel").addEventListener("click", () => {
       editTarget = null;

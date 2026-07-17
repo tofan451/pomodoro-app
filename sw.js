@@ -4,7 +4,7 @@
    Big static assets (sounds, icons, backgrounds): cache-first, cached on
    first use, so the installed app works offline without re-downloading. */
 
-const CACHE = "focus-v2";
+const CACHE = "focus-v3"; // bumped so installed PWAs discard stale cached CSS/JS
 const CORE = ["./", "index.html", "styles.css", "app.js", "manifest.webmanifest"];
 const CACHE_FIRST = /\/(sounds|icons|backgrounds)\//;
 

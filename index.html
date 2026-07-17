@@ -175,6 +175,11 @@
             <span id="stat-total" class="stat-value">0m</span>
             <span class="stat-sub">focus time</span>
           </div>
+          <div class="card stat-card">
+            <span class="stat-label">Tasks Done</span>
+            <span id="stat-done" class="stat-value">0</span>
+            <span class="stat-sub">completed</span>
+          </div>
         </div>
 
         <div class="card records-card">
@@ -237,6 +242,20 @@
           <div id="week-chart" class="week-chart" role="img" aria-label="Focus time per day, last seven days"></div>
         </div>
 
+        <!-- Goal calendar: one ring per day, filled by sessions ÷ daily goal -->
+        <div class="card chart-card">
+          <div class="card-header">
+            <h2>Goal Calendar</h2>
+            <div class="cal-nav">
+              <button type="button" id="cal-prev" class="mini-btn" aria-label="Previous month">‹</button>
+              <span id="cal-title" class="cal-title"></span>
+              <button type="button" id="cal-next" class="mini-btn" aria-label="Next month">›</button>
+            </div>
+          </div>
+          <div id="goal-calendar" class="goal-calendar"></div>
+          <p class="empty-note cal-note">Each ring fills as you complete focus sessions toward your daily goal (set in Settings).</p>
+        </div>
+
         <div class="card table-card">
           <div class="card-header"><h2>Custom Report</h2></div>
           <div class="report-controls">
@@ -290,6 +309,10 @@
         <label class="field">
           <span>Long break every</span>
           <input type="number" id="set-every" min="2" max="12" required />
+        </label>
+        <label class="field">
+          <span>Daily goal (sessions)</span>
+          <input type="number" id="set-goal" min="1" max="24" required />
         </label>
       </div>
 
